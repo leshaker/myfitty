@@ -33,17 +33,20 @@ class Writer:
         self._defs: dict[int, tuple] = {}
 
     def message(self, local: int, global_num: int, fields: list[tuple[int, int, int]]):
-        """fields: (field number, base type, value). Re-emits the definition if it changed."""
-        sig = (global_num, tuple((n, t) for n, t, _ in fields))
+        """fields: (field number, base type, value); a tuple value is written as an array field.
+        Re-emits the definition if it changed."""
+        count = lambda v: len(v) if isinstance(v, tuple) else 1  # noqa: E731
+        sig = (global_num, tuple((n, t, count(v)) for n, t, v in fields))
         if self._defs.get(local) != sig:
             self._defs[local] = sig
             self.body += struct.pack("<BBBHB", 0x40 | local, 0, 0, global_num, len(fields))
-            for n, t, _ in fields:
-                size = struct.calcsize(_FMT[t].lstrip("<"))
+            for n, t, v in fields:
+                size = struct.calcsize(_FMT[t].lstrip("<")) * count(v)
                 self.body += struct.pack("BBB", n, size, t)
         self.body += struct.pack("B", local)
         for _, t, v in fields:
-            self.body += struct.pack(_FMT[t] if _FMT[t].startswith("<") else "<" + _FMT[t], v)
+            for item in (v if isinstance(v, tuple) else (v,)):
+                self.body += struct.pack(_FMT[t] if _FMT[t].startswith("<") else "<" + _FMT[t], item)
 
     def finish(self) -> bytes:
         header = struct.pack("<BBHI4s", 14, 0x20, 2132, len(self.body), b".FIT")
@@ -62,7 +65,7 @@ SUB_SPORTS = {"generic": 0, "indoor_cycling": 6, "road": 7, "street": 2}
 
 def make_fit(*, start: datetime, seconds: int, sport: str | None, sub_sport: str | None = None,
              serial: int | None = 1, power=None, hr=None, gps=False, file_type: int = 4,
-             session: bool = True, gap: tuple[int, int] | None = None) -> bytes:
+             session: bool = True, gap: tuple[int, int] | None = None, array_fields: bool = False) -> bytes:
     """Build an activity FIT file with one record per second.
 
     power / hr: callables t -> value (or None for absent).  gap: (from_t, to_t) of seconds
@@ -88,6 +91,8 @@ def make_fit(*, start: datetime, seconds: int, sport: str | None, sub_sport: str
                   (1, SINT32, semicircles(8.0 + 0.0001 * math.sin(t / 60)))]
         dist += 5.0
         f.append((5, UINT32, int(dist * 100)))
+        if array_fields:  # high-rate recording: three samples per record, as some Garmin devices write
+            f += [(73, UINT32, (4000, 4100, 4200)), (78, UINT32, (5000, 5000, 5010))]
         if hr:
             f.append((3, UINT8, int(hr(t))))
         if power:
@@ -132,6 +137,11 @@ def indoor_nosensor() -> bytes:
     return make_fit(start=INDOOR_START, seconds=300, sport="cycling", sub_sport="indoor_cycling", serial=333)
 
 
+def array_fields_ride() -> bytes:
+    return make_fit(start=datetime(2026, 3, 14, 8, 0, 0, tzinfo=timezone.utc), seconds=120, sport="cycling",
+                    sub_sport="road", serial=666, hr=lambda t: 130, array_fields=True)
+
+
 def no_sport() -> bytes:
     return make_fit(start=datetime(2026, 3, 13, 8, 0, 0, tzinfo=timezone.utc), seconds=120, sport=None,
                     serial=444, hr=lambda t: 100)
@@ -150,6 +160,7 @@ FIXTURES = {
     "run_hr_only.fit": run_hr_only,
     "indoor_nosensor.fit": indoor_nosensor,
     "no_sport.fit": no_sport,
+    "array_fields.fit": array_fields_ride,
     "non_activity.fit": non_activity,
     "corrupt.fit": corrupt,
 }

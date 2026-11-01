@@ -35,14 +35,15 @@ class ScanResult:
         return ", ".join(parts)
 
 
-def scan(con, cfg: Config | None = None, now: float | None = None) -> ScanResult:
+def scan(con, cfg: Config | None = None, now: float | None = None, retry_failed: bool = False) -> ScanResult:
     """Import every new or changed `.fit` file under the configured folder (which is only read).
 
     Scans run one at a time within the process: a second session that opens while one is running
-    waits, then finds the files already imported.
+    waits, then finds the files already imported. Unchanged files that failed earlier are skipped too,
+    unless `retry_failed` is set (e.g. after fixing the parser).
     """
     with db.WRITE_LOCK:
-        return _scan(con, cfg or load_config(), now)
+        return _scan(con, cfg or load_config(), now, retry_failed)
 
 
 def _backfill_max_power(con, samples_dir) -> None:
@@ -58,7 +59,7 @@ def _backfill_max_power(con, samples_dir) -> None:
             con.execute("UPDATE activities SET max_power = ? WHERE id = ?", [float(mx), aid])
 
 
-def _scan(con, cfg: Config, now: float | None) -> ScanResult:
+def _scan(con, cfg: Config, now: float | None, retry_failed: bool = False) -> ScanResult:
     now = time.time() if now is None else now
     result = ScanResult()
     _backfill_max_power(con, cfg.samples_dir)
@@ -66,8 +67,9 @@ def _scan(con, cfg: Config, now: float | None) -> ScanResult:
         result.folder_missing = True
         return result
 
-    known = {p: (size, mtime) for p, size, mtime in
-             con.execute("SELECT path, size, mtime FROM source_files").fetchall()}
+    known = {p: (size, mtime) for p, size, mtime, status in
+             con.execute("SELECT path, size, mtime, status FROM source_files").fetchall()
+             if not (retry_failed and status == "failed")}
     for path in sorted(p for p in cfg.fit_dir.rglob("*") if p.is_file() and p.suffix.lower() == ".fit"):
         st = path.stat()
         key = str(path)
@@ -107,7 +109,7 @@ def _import_file(con, cfg: Config, path: Path) -> str:
     score = score_activity(
         {"moving_seconds": act.moving_seconds, "normalized_power": act.normalized_power,
          "hr_histogram": act.hr_histogram},
-        db.thresholds_on(con, local_date), act.sport)
+        db.thresholds_on(con, local_date), act.sport, cfg.zone_edges)
     rel = sample_relpath(act.sport, act.start_time, serial)
     write_samples(cfg.samples_dir, rel, act.samples)  # before the row, so a row never lacks samples
 
@@ -115,13 +117,13 @@ def _import_file(con, cfg: Config, path: Path) -> str:
         con.execute(
             """INSERT INTO activities (start_time, local_date, device_serial, sport, sub_sport, source_path,
                    sample_path, elapsed_seconds, moving_seconds, distance_m, avg_hr, max_hr, avg_power,
-                   max_power, normalized_power, hr_histogram, tss, tss_method, trimp, ftp_used, thr_hr_used,
+                   max_power, normalized_power, hr_histogram, tss, tss_method, relative_effort, ftp_used, thr_hr_used,
                    max_hr_used, unscored_reason)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [start_utc, local_date, serial, act.sport, act.sub_sport, str(path), rel, act.elapsed_seconds,
              act.moving_seconds, act.distance_m, act.avg_hr, act.max_hr, act.avg_power, act.max_power, act.normalized_power,
              json.dumps(act.hr_histogram) if act.hr_histogram else None,
-             score["tss"], score["tss_method"], score["trimp"], score["ftp_used"], score["thr_hr_used"],
+             score["tss"], score["tss_method"], score["relative_effort"], score["ftp_used"], score["thr_hr_used"],
              score["max_hr_used"], score["unscored_reason"]])
     except duckdb.ConstraintException:  # lost a race with another importer: it is a duplicate
         return "duplicate"

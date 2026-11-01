@@ -6,7 +6,8 @@ from myfitty.ingest.importer import scan
 from myfitty.rescore import seed_thresholds
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    retry_failed = "--retry-failed" in (sys.argv[1:] if argv is None else argv)
     try:
         cfg = load_config()
     except ConfigError as e:
@@ -14,7 +15,7 @@ def main() -> int:
         return 2
     with db.connect(cfg.db_path) as con:
         seed_thresholds(con, cfg.thresholds)
-        result = scan(con, cfg)
+        result = scan(con, cfg, retry_failed=retry_failed)
     if result.folder_missing:
         print(f"FIT folder not found: {cfg.fit_dir}", file=sys.stderr)
         return 1

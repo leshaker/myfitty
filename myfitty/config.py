@@ -26,6 +26,7 @@ class Config:
     db_path: Path
     samples_dir: Path
     thresholds: tuple[ThresholdEntry, ...] = ()
+    zone_edges: tuple[float, ...] | None = None   # HR zone edges for relative effort (bpm), else from max HR
 
 
 def config_path() -> Path | None:
@@ -62,6 +63,21 @@ def _read_thresholds(raw) -> tuple[ThresholdEntry, ...]:
     return tuple(sorted(out, key=lambda e: (e.effective_from, e.metric)))
 
 
+def _read_zone_edges(section) -> tuple[float, ...] | None:
+    if section is None:
+        return None
+    raw = section.get("zone_edges") if isinstance(section, dict) else None
+    if raw is None:
+        return None
+    ok = (isinstance(raw, list) and len(raw) == 4
+          and all(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 for v in raw)
+          and all(a < b for a, b in zip(raw, raw[1:])))
+    if not ok:
+        raise ConfigError("relative_effort.zone_edges must be four ascending positive bpm values, "
+                          f"e.g. [114, 146, 153, 163]; got {raw!r}")
+    return tuple(float(v) for v in raw)
+
+
 def load_config() -> Config:
     """Settings from the environment and the optional TOML file, re-read on every call.
 
@@ -91,4 +107,5 @@ def load_config() -> Config:
         db_path=folder("MYFITTY_DB", "db_path", "./data/myfitty.duckdb"),
         samples_dir=folder("MYFITTY_SAMPLES_DIR", "samples_dir", "./data/samples"),
         thresholds=_read_thresholds(file_values.get("thresholds", [])),
+        zone_edges=_read_zone_edges(file_values.get("relative_effort")),
     )

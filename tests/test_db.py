@@ -140,3 +140,15 @@ def test_delete(con):
     assert db.delete_threshold(con, "ftp", date(2026, 6, 1)) is None  # already gone
     assert db.delete_threshold(con, "ftp", date(2026, 1, 1)) == (None, None)
     assert db.list_thresholds(con) == []
+
+
+def test_old_trimp_column_is_renamed_on_connect(tmp_path):
+    path = tmp_path / "old.duckdb"
+    with db.connect(path) as con:
+        _insert(con)
+        con.execute("ALTER TABLE activities RENAME COLUMN relative_effort TO trimp")     # pre-rename database
+        con.execute("UPDATE activities SET trimp = 42")
+    with db.connect(path) as con:
+        cols = [r[0] for r in con.execute("DESCRIBE activities").fetchall()]
+        assert "relative_effort" in cols and "trimp" not in cols
+        assert con.execute("SELECT relative_effort FROM activities").fetchone() == (42,)   # value kept until rescore

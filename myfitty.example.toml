@@ -7,6 +7,11 @@ fit_dir = "~/Dropbox/Apps/WahooFitness"
 # db_path = "data/myfitty.duckdb"
 # samples_dir = "data/samples"
 
+# Heart-rate zones for relative effort (upper bound of Z1..Z4 in bpm). Optional: without it the zones
+# are derived from your max HR. After changing it run `myfitty rescore`.
+[relative_effort]
+zone_edges = [114, 146, 153, 163]
+
 # Threshold history. Each value applies from its date onward. Only changes need an entry.
 # Entries are added to the database at startup if that (metric, date) is not already there;
 # values you edit or add in the app are never overwritten or removed by this file.

@@ -45,6 +45,13 @@ def test_missing_sport_is_unknown():
     assert a.sport == "unknown" and a.sub_sport is None
 
 
+def test_array_valued_fields_use_the_latest_sample():
+    a = parse_fit(FIX / "array_fields.fit")       # enhanced_speed / enhanced_altitude arrive as 3-tuples
+    assert len(a.samples) == 120 and a.hr_histogram == {130: 120}
+    assert a.samples["speed"].iloc[0] == pytest.approx(4.2)       # last of (4.0, 4.1, 4.2) m/s
+    assert a.samples["altitude"].iloc[0] == pytest.approx(5010 / 5 - 500)   # raw 5010, scale 5 offset 500
+
+
 def test_non_activity_and_corrupt():
     with pytest.raises(NotAnActivity):
         parse_fit(FIX / "non_activity.fit")

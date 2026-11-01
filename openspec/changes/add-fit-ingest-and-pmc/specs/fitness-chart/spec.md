@@ -53,16 +53,27 @@ The system SHALL provide total TSS per ISO week (Monday start), optionally filte
 - **WHEN** a week has activities of 60, 80 and 40 TSS
 - **THEN** that week's load is 180
 
+### Requirement: Weekly relative effort
+The system SHALL provide the total relative effort per ISO week (Monday start), optionally filtered by sport and date range. Activities without a relative effort count as zero.
+
+#### Scenario: Weekly relative effort totals
+- **WHEN** a week has activities with relative effort 120 and 60, and one without heart rate
+- **THEN** that week's relative effort is 180
+
+#### Scenario: Sport filter
+- **WHEN** the weekly relative effort is requested for `running`
+- **THEN** only running activities contribute
+
 ### Requirement: Training status page
-The system SHALL provide a single page that shows CTL, ATL and TSB over time, a weekly load bar chart, a sport selector (all plus each stored sport) and a date range selector, using the computed series.
+The system SHALL provide a single page that shows CTL, ATL and TSB over time, a weekly load bar chart, a weekly relative effort bar chart, a sport selector (all plus each stored sport) and a date range selector, using the computed series.
 
 #### Scenario: Open the page
 - **WHEN** the user opens the app URL with activities imported
-- **THEN** the PMC chart and weekly bars are displayed for the combined view
+- **THEN** the PMC chart and both weekly bar charts are displayed for the combined view
 
 #### Scenario: Change sport
 - **WHEN** the user selects `running`
-- **THEN** both charts update to the running-only series
+- **THEN** all charts update to the running-only series
 
 #### Scenario: Empty database
 - **WHEN** no activities have been imported

@@ -103,6 +103,10 @@ The system SHALL NOT abort an import run because one file is corrupt, truncated 
 - **WHEN** a FIT file contains no session message (for example a settings or monitoring file)
 - **THEN** it is skipped with a "not an activity" reason
 
+#### Scenario: Failed file is retried on request
+- **WHEN** a file failed earlier, is unchanged, and an import is run with the retry option
+- **THEN** it is read again and imported if it now parses, and files that already imported are not read again
+
 #### Scenario: Failed file is retried after being fixed
 - **WHEN** a previously failed file is replaced with a valid one
 - **THEN** the next scan imports it

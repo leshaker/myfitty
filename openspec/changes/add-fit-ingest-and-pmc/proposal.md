@@ -10,7 +10,7 @@ Strava Premium's training-status features (fitness, fatigue, form, relative effo
 - Ingest FIT files from a local folder (scanned when the app opens and on an "Import now" button; unchanged files are skipped), parse them, and store one activity per ride/run/etc.
 - Deduplicate on start time + device serial, so re-importing the same file or the same activity from two sources is a no-op.
 - Store FTP, threshold HR and max HR with effective dates; each activity is scored with the thresholds in effect on its date.
-- Compute per-activity load: TSS from power when available, otherwise hrTSS from HR; plus a zone-weighted TRIMP as "relative effort".
+- Compute per-activity load: TSS from power when available, otherwise hrTSS from HR; plus a zone-weighted "relative effort" (like Strava's) and a weekly relative effort chart.
 - Compute the performance management chart: CTL (42-day), ATL (7-day), TSB (CTL − ATL), and weekly load.
 - An optional `myfitty.toml` read at startup (folders and a threshold history); configured thresholds fill gaps without overwriting what is stored, and the personal file is git-ignored.
 - Console commands: `myfitty app`, `myfitty ingest` and `myfitty rescore`.
@@ -30,7 +30,7 @@ Assumptions (answers to the brief's open questions; revisit if wrong):
 ### New Capabilities
 - `fit-ingest`: importing FIT files from a local folder into stored, deduplicated activities with sport and summary metrics.
 - `training-thresholds`: effective-dated FTP, threshold HR and max HR, and which values apply to an activity.
-- `training-load`: per-activity TSS (power or HR based) and TRIMP relative effort.
+- `training-load`: per-activity TSS (power or HR based) and zone-weighted relative effort.
 - `fitness-chart`: daily CTL/ATL/TSB and weekly load, computed by a query layer and displayed in the Streamlit app.
 
 ### Modified Capabilities
