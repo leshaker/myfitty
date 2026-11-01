@@ -2,7 +2,7 @@
 import sys
 from pathlib import Path
 
-USAGE = "usage: myfitty {app|ingest|rescore} [options]\n  app     start the web UI (extra options go to `streamlit run`)\n  ingest  import FIT files from MYFITTY_FIT_DIR\n  rescore recompute every activity's scores (after changing scoring rules)"
+USAGE = "usage: myfitty {app|ingest|rescore} [options]\n  app     start the web UI (extra options go to `streamlit run`)\n  ingest  import FIT files from MYFITTY_FIT_DIR (--retry-failed retries files that failed before)\n  rescore recompute every activity's scores (after changing scoring rules)"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -17,7 +17,7 @@ def main(argv: list[str] | None = None) -> int:
         return st_cli.main() or 0
     if cmd == "ingest":
         from myfitty.ingest.__main__ import main as ingest_main
-        return ingest_main()
+        return ingest_main(rest)
     if cmd == "rescore":
         from myfitty import db
         from myfitty.config import ConfigError, load_config

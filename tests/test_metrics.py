@@ -6,7 +6,7 @@ import pytest
 
 from myfitty.metrics.pmc import daily_pmc, weekly_load, window
 from myfitty.metrics.scoring import score_activity
-from myfitty.metrics.trimp import trimp
+from myfitty.metrics.effort import default_zone_edges, relative_effort
 from myfitty.metrics.tss import hr_tss, normalized_power, power_tss
 
 
@@ -56,18 +56,41 @@ def test_hr_tss_missing():
     assert hr_tss({}, 165) is None and hr_tss({150: 60}, None) is None
 
 
-# --- 3.3 TRIMP ---
-def test_trimp_30_min_zone3():
-    assert trimp({150: 1800}, 200) == pytest.approx(90)  # 75% of max
+# --- 3.3 relative effort ---
+EDGES = (114, 146, 153, 163)     # Z1 <114 | Z2 <146 | Z3 <153 | Z4 <163 | Z5 >=163
 
 
-def test_trimp_below_zone1_and_top_zone():
-    assert trimp({90: 3600}, 200) == 0
-    assert trimp({200: 600}, 200) == pytest.approx(50)  # 10 min x 5
+def test_relative_effort_weights_each_zone():
+    for bpm, w in ((100, 0.3), (130, 0.3), (150, 2.1), (158, 2.1), (170, 2.4)):
+        assert relative_effort({bpm: 600}, EDGES) == pytest.approx(10 * w)   # 10 minutes in one zone
 
 
-def test_trimp_no_hr():
-    assert trimp(None, 200) is None and trimp({}, 200) is None and trimp({150: 60}, None) is None
+def test_relative_effort_zone_boundaries_belong_to_the_next_zone():
+    assert relative_effort({146: 60}, EDGES) == pytest.approx(2.1)           # exactly on the Z2/Z3 edge -> Z3
+    assert relative_effort({145: 60}, EDGES) == pytest.approx(0.3)
+
+
+def test_relative_effort_adds_up_and_grows_with_time_and_intensity():
+    mixed = relative_effort({120: 1800, 150: 1200, 170: 600}, EDGES)
+    assert mixed == pytest.approx(30 * 0.3 + 20 * 2.1 + 10 * 2.4)
+    assert relative_effort({150: 3600}, EDGES) > relative_effort({150: 1800}, EDGES) > 0
+    assert relative_effort({170: 1800}, EDGES) > relative_effort({150: 1800}, EDGES)
+
+
+def test_relative_effort_json_string_keys_and_unordered_edges():
+    assert relative_effort({"150": 1800}, (163, 114, 153, 146)) == pytest.approx(30 * 2.1)
+
+
+def test_relative_effort_missing_inputs():
+    assert relative_effort(None, EDGES) is None and relative_effort({}, EDGES) is None
+    assert relative_effort({150: 60}, None) is None
+
+
+def test_default_zone_edges_come_from_max_hr():
+    assert default_zone_edges(None) is None
+    e = default_zone_edges(200)
+    assert e == pytest.approx((126, 160, 168, 180))
+    assert relative_effort({150: 600}, e) == pytest.approx(10 * 0.3)         # 75% of max: Z2
 
 
 # --- 3.4 scoring selector ---
@@ -78,7 +101,7 @@ def test_power_wins_when_both():
     r = score_activity({"moving_seconds": 3600, "normalized_power": 250, "hr_histogram": {150: 3600}}, TH)
     assert r["tss"] == pytest.approx(100) and r["tss_method"] == "power"
     assert r["ftp_used"] == 250 and r["thr_hr_used"] is None and r["max_hr_used"] == 190
-    assert r["trimp"] is not None and r["unscored_reason"] is None
+    assert r["relative_effort"] is not None and r["unscored_reason"] is None
 
 
 def test_hr_fallback_without_power():
@@ -94,7 +117,7 @@ def test_hr_fallback_when_no_ftp():
 
 def test_unscored_reasons():
     r = score_activity({"moving_seconds": 3600}, TH)
-    assert r["tss"] is None and r["unscored_reason"] == "no_data" and r["trimp"] is None
+    assert r["tss"] is None and r["unscored_reason"] == "no_data" and r["relative_effort"] is None
     r = score_activity({"moving_seconds": 3600, "hr_histogram": {150: 60}}, {"ftp": None, "threshold_hr": None, "max_hr": None})
     assert r["unscored_reason"] == "no_threshold"
     r = score_activity({"moving_seconds": 3600, "normalized_power": 200}, {**TH, "ftp": None})
@@ -169,3 +192,13 @@ def test_running_without_threshold_hr_is_not_rescued_by_ftp():
     r = score_activity({"moving_seconds": 3600, "normalized_power": 300, "hr_histogram": {150: 3600}},
                        {**TH, "threshold_hr": None}, "running")
     assert r["tss"] is None and r["unscored_reason"] == "no_threshold"
+
+
+def test_scoring_uses_configured_zone_edges_else_max_hr():
+    s = {"moving_seconds": 3600, "hr_histogram": {150: 3600}}
+    configured = score_activity(s, {"ftp": None, "threshold_hr": 165, "max_hr": None}, "running", EDGES)
+    assert configured["relative_effort"] == pytest.approx(60 * 2.1) and configured["max_hr_used"] is None
+    derived = score_activity(s, TH, "running")                                 # max HR 190 -> edges 120/152/160/171
+    assert derived["relative_effort"] == pytest.approx(60 * 0.3) and derived["max_hr_used"] == 190
+    none = score_activity(s, {"ftp": None, "threshold_hr": 165, "max_hr": None}, "running")
+    assert none["relative_effort"] is None                                     # no zones and no max HR

@@ -41,4 +41,4 @@
 
 ## 6. Integration check
 
-- [ ] 6.1 Import a real folder of personal Wahoo and Garmin FIT files, set thresholds, and verify no failures other than expected non-activity files and that the chart looks plausible against Strava's fitness curve
+- [x] 6.1 Import a real folder of personal Wahoo and Garmin FIT files, set thresholds, and verify no failures other than expected non-activity files and that the chart looks plausible against Strava's fitness curve

@@ -10,8 +10,13 @@ HR_TSS_ZONES = (
     (float("inf"), 100.0),   # Z5: at or above threshold
 )
 
-# Edwards TRIMP: zone floor as a fraction of max HR -> weight. Below the first floor counts as zero.
-TRIMP_ZONES = ((0.5, 1), (0.6, 2), (0.7, 3), (0.8, 4), (0.9, 5))
+# Relative effort (a HR-based load similar to Strava's): minutes in each of five heart-rate zones times a
+# per-minute weight. Weights are calibrated against the owner's Strava Relative Effort history (monotone
+# least-squares on ~390 activities, zones 114/146/153/163 bpm; log-correlation 0.95), so values land near
+# Strava's. Tune here, then run `myfitty rescore`.
+RELATIVE_EFFORT_WEIGHTS = (0.3, 0.3, 2.1, 2.1, 2.4)       # Z1..Z5, per minute
+# Zone edges (upper bound of Z1..Z4) as fractions of max HR, used when no explicit edges are configured.
+DEFAULT_ZONE_FRACTIONS = (0.63, 0.80, 0.84, 0.90)
 
 # Sports scored from heart rate only, even when the file has power data: running power is not
 # comparable with a cycling FTP, so power TSS would be wrong. FIT `session.sport` names.

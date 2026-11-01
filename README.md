@@ -20,7 +20,7 @@ uv run myfitty app            # same as: .venv/bin/streamlit run myfitty/app.py
 3. Pick a sport and date range in the sidebar. CTL and ATL always use your full history, so a
    shorter range never changes the values.
 
-Import from the command line (for example from cron) with `uv run myfitty ingest` (or `python -m myfitty.ingest`). The app and the CLI
+Import from the command line (for example from cron) with `uv run myfitty ingest` (or `python -m myfitty.ingest`); add `--retry-failed` to re-read files that failed before, for example after a parser fix. The app and the CLI
 can both be used, but not at the exact same moment (DuckDB allows one writer; each waits a few
 seconds for the other).
 
@@ -31,10 +31,13 @@ Try it with the bundled fixtures: `MYFITTY_FIT_DIR=tests/fixtures uv run myfitty
 
 Optional `myfitty.toml` (copy `myfitty.example.toml`; it is git-ignored) is read at startup by the app and
 by `myfitty ingest`. Point to another file with `MYFITTY_CONFIG`. It can set the folders and a
-threshold history:
+threshold history and the zones for relative effort:
 
 ```toml
 fit_dir = "~/Dropbox/Apps/WahooFitness"
+
+[relative_effort]
+zone_edges = [114, 146, 153, 163]   # optional; upper bound of zones 1-4 in bpm
 
 [[thresholds]]
 metric = "ftp"          # ftp | threshold_hr | max_hr
@@ -85,12 +88,17 @@ Editing or deleting an entry rescores only the activities it applies to.
   | TSS per hour | 20 | 40 | 60 | 80 | 100 |
 
   The table is in `myfitty/metrics/constants.py`.
-- **Relative effort** (Edwards TRIMP): minutes in each zone of % max HR times the weight:
-  50–60% ×1, 60–70% ×2, 70–80% ×3, 80–90% ×4, 90–100% ×5; below 50% counts 0.
+- **Relative effort** (comparable to Strava's Relative Effort): minutes in each of five heart-rate zones times a
+  per-minute weight of 0.3 / 0.3 / 2.1 / 2.1 / 2.4 for zones 1–5 (`myfitty/metrics/constants.py`). Zone edges
+  are the upper bounds of zones 1–4 in bpm, from `[relative_effort] zone_edges` in `myfitty.toml`
+  (for example `[114, 146, 153, 163]`), or by default 63 / 80 / 84 / 90% of your max HR. The weights were
+  calibrated against Strava's own numbers for ~390 rides and runs (median ratio 1.0, correlation 0.95, about
+  19% error per activity); walks and hikes come out roughly 40% lower than Strava. It works for every sport
+  with heart rate and is charted per week. After changing the zones or weights run `uv run myfitty rescore`.
 - **CTL / ATL**: exponentially weighted averages of daily TSS with 42- and 7-day constants,
   `x += (tss - x) / N`, starting from 0. Days without activity count as 0 and the series runs to today.
 - **TSB** (form) = CTL − ATL on the same day.
-- **Weekly load**: total TSS per ISO week (Monday start).
+- **Weekly load**: total TSS per ISO week (Monday start); **weekly relative effort** is the same for relative effort.
 - Running is always scored by hrTSS, even when the file has power: running power is not comparable
   with a cycling FTP. The sports are listed in `HR_ONLY_SPORTS` in `myfitty/metrics/constants.py`.
   After changing scoring rules, run `uv run myfitty rescore`.

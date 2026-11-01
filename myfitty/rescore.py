@@ -3,18 +3,28 @@ import json
 from datetime import date
 
 from myfitty import db
+from myfitty.config import ConfigError, load_config
 from myfitty.metrics.scoring import score_activity
 
-SCORE_COLUMNS = ("tss", "tss_method", "trimp", "ftp_used", "thr_hr_used", "max_hr_used", "unscored_reason")
+SCORE_COLUMNS = ("tss", "tss_method", "relative_effort", "ftp_used", "thr_hr_used", "max_hr_used", "unscored_reason")
 
 
-def rescore(con, start: date | None = None, end: date | None = None) -> int:
+def rescore(con, start: date | None = None, end: date | None = None, zone_edges=None) -> int:
     """Rescore activities with start <= local_date < end (None = unbounded). Returns rows changed."""
     with db.WRITE_LOCK:
-        return _rescore(con, start, end)
+        return _rescore(con, start, end, zone_edges)
 
 
-def _rescore(con, start, end) -> int:
+def _configured_zone_edges():
+    try:
+        return load_config().zone_edges
+    except ConfigError:
+        return None
+
+
+def _rescore(con, start, end, zone_edges) -> int:
+    if zone_edges is None:
+        zone_edges = _configured_zone_edges()
     q = ("SELECT id, local_date, sport, moving_seconds, normalized_power, hr_histogram, "
          + ", ".join(SCORE_COLUMNS) + " FROM activities WHERE true")
     args = []
@@ -31,7 +41,7 @@ def _rescore(con, start, end) -> int:
         new = score_activity(
             {"moving_seconds": moving, "normalized_power": npw,
              "hr_histogram": json.loads(hist) if hist else None},
-            db.thresholds_on(con, local_date), sport)
+            db.thresholds_on(con, local_date), sport, zone_edges)
         if new != old:
             con.execute(
                 "UPDATE activities SET " + ", ".join(f"{c} = ?" for c in SCORE_COLUMNS) + " WHERE id = ?",

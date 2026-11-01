@@ -10,6 +10,7 @@ from myfitty.ingest.importer import scan
 from myfitty.rescore import remove_threshold, save_threshold, seed_thresholds
 
 CTL_COLOR, ATL_COLOR, TSB_COLOR = "#2a78d6", "#eb6834", "#1baf7a"  # categorical slots 1-3
+EFFORT_COLOR = "#7b6ee6"  # violet, distinct from the series above
 
 st.set_page_config(page_title="myfitty", layout="wide")
 alt.data_transformers.disable_max_rows()
@@ -38,6 +39,12 @@ def load_pmc(db_path: str, sport, start, end) -> pd.DataFrame:
 def load_weekly(db_path: str, sport, start, end) -> pd.DataFrame:
     with db.connect(db_path) as con:
         return queries.weekly(con, sport, start, end)
+
+
+@st.cache_data(show_spinner=False)
+def load_weekly_effort(db_path: str, sport, start, end) -> pd.DataFrame:
+    with db.connect(db_path) as con:
+        return queries.weekly_effort(con, sport, start, end)
 
 
 @st.cache_data(show_spinner=False)
@@ -188,6 +195,16 @@ bars = alt.Chart(weekly).mark_bar(color=CTL_COLOR, cornerRadiusTopLeft=4, corner
     tooltip=[alt.Tooltip("week_start:T", title="Week of"), alt.Tooltip("tss:Q", title="TSS", format=".0f")])
 st.altair_chart(bars.properties(height=200), width="stretch")
 
+st.subheader("Weekly relative effort")
+st.caption("Heart-rate based, similar to Strava's Relative Effort; works for every sport with heart rate.")
+effort = load_weekly_effort(DB, sport, start, end)
+effort = effort.assign(week=pd.to_datetime(effort["week_start"]).dt.strftime("%d %b %y" if long_range else "%d %b"))
+effort_bars = alt.Chart(effort).mark_bar(color=EFFORT_COLOR, cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
+    x=alt.X("week:O", sort=None, title="Week starting (Monday)", axis=alt.Axis(labelAngle=-45)),
+    y=alt.Y("effort:Q", title="Relative effort"),
+    tooltip=[alt.Tooltip("week_start:T", title="Week of"), alt.Tooltip("effort:Q", title="Relative effort", format=".0f")])
+st.altair_chart(effort_bars.properties(height=200), width="stretch")
+
 st.subheader("Activities")
 acts = load_activities(DB, sport, start, end)
 
@@ -201,9 +218,9 @@ table = acts.assign(
     when=acts["start_time"].map(local_time),
     minutes=(acts["moving_seconds"] / 60).round(0),
     km=(acts["distance_m"] / 1000).round(1),
-)[["when", "sport", "sub_sport", "minutes", "km", "tss", "tss_method", "trimp", "unscored_reason"]]
+)[["when", "sport", "sub_sport", "minutes", "km", "tss", "tss_method", "relative_effort", "unscored_reason"]]
 whole = st.column_config.NumberColumn(format="%.0f")
-st.dataframe(table.rename(columns={"tss": "TSS", "tss_method": "method", "trimp": "relative effort",
+st.dataframe(table.rename(columns={"tss": "TSS", "tss_method": "method", "relative_effort": "relative effort",
                                    "unscored_reason": "unscored"}),
              column_config={"TSS": whole, "relative effort": whole},
              hide_index=True, width="stretch")

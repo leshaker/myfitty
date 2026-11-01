@@ -59,12 +59,12 @@ def test_empty_state(env):
 def test_charts_render_and_sport_filter_updates_them(env):
     seed(env, [(20, "cycling", 100), (10, "cycling", 120), (5, "running", 40)])
     at = run()
-    assert len(charts(at)) == 3                               # PMC, form, weekly
+    assert len(charts(at)) == 4                               # PMC, form, weekly TSS, weekly effort
     assert len(at.dataframe[0].value) == 3
     combined = chart_data_max(charts(at)[2], "tss")
     at.selectbox[0].select("running").run()
     assert not at.exception
-    assert len(charts(at)) == 3 and len(at.dataframe[0].value) == 1
+    assert len(charts(at)) == 4 and len(at.dataframe[0].value) == 1
     assert chart_data_max(charts(at)[2], "tss") < combined
 
 
@@ -156,7 +156,7 @@ def test_activity_table_shows_local_time_and_whole_numbers(env):
     utc = datetime(d.year, d.month, d.day, 14, 25, tzinfo=timezone.utc)
     with db.connect(env / "t.duckdb") as con:
         con.execute("INSERT INTO activities (start_time, local_date, device_serial, sport, moving_seconds, tss, "
-                    "tss_method, trimp) VALUES (?, ?, 's', 'cycling', 3600, 52.4889, 'power', 439.5833)",
+                    "tss_method, relative_effort) VALUES (?, ?, 's', 'cycling', 3600, 52.4889, 'power', 439.5833)",
                     [utc.replace(tzinfo=None), utc.astimezone().date()])
     at = run()
     row = at.dataframe[0].value.iloc[0]
@@ -196,7 +196,7 @@ def test_series_can_be_shown_and_hidden_independently(env):
     assert pmc_metrics(at) == {"Fatigue (ATL)"}
 
     at.get("button_group")[0].set_value([]).run()                             # none: no chart, a hint instead
-    assert not at.exception and len(charts(at)) == 2                          # form + weekly remain
+    assert not at.exception and len(charts(at)) == 3                          # form + both weekly charts remain
     assert any("at least one series" in c.value for c in at.caption)
 
 
@@ -212,3 +212,15 @@ def test_tooltip_lists_every_visible_series_at_once(env):
     assert rule_tooltip_titles(at) == ["Date", "Fitness (CTL)", "Fatigue (ATL)", "Form (TSB)"]
     at.get("button_group")[0].set_value(["Fatigue (ATL)"]).run()
     assert rule_tooltip_titles(at) == ["Date", "Fatigue (ATL)", "Form (TSB)"]
+
+
+def test_weekly_relative_effort_chart_follows_the_sport_filter(env):
+    d1, d2 = date.today() - timedelta(days=9), date.today() - timedelta(days=2)
+    with db.connect(env / "t.duckdb") as con:
+        for i, (d, sport, effort) in enumerate([(d1, "cycling", 200.0), (d2, "running", 80.0)]):
+            con.execute("INSERT INTO activities (start_time, local_date, device_serial, sport, moving_seconds, "
+                        "relative_effort) VALUES (?, ?, ?, ?, 3600, ?)", [f"{d} 08:00:00", d, f"s{i}", sport, effort])
+    at = run()
+    assert chart_data_max(charts(at)[3], "effort") >= 200
+    at.selectbox[0].select("running").run()
+    assert not at.exception and chart_data_max(charts(at)[3], "effort") == 80

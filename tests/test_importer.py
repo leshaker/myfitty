@@ -160,8 +160,8 @@ def test_scores_use_thresholds_in_effect(env):
     db.set_threshold(con, "max_hr", date(2026, 1, 1), 190)
     put(cfg, "a.fit", src="ride_power_hr.fit")
     scan(con, cfg)
-    tss, method, ftp, trimp = con.execute("SELECT tss, tss_method, ftp_used, trimp FROM activities").fetchone()
-    assert method == "power" and ftp == 200 and tss > 0 and trimp > 0
+    tss, method, ftp, effort = con.execute("SELECT tss, tss_method, ftp_used, relative_effort FROM activities").fetchone()
+    assert method == "power" and ftp == 200 and tss > 0 and effort > 0
 
 
 # --- 4.6: on-demand scanning ---
@@ -322,3 +322,34 @@ def test_old_database_is_migrated_and_max_power_backfilled(env):
         assert con2.execute("SELECT max_power FROM activities").fetchone() == (None,)
         scan(con2, cfg)                                                   # next scan fills it from the samples
         assert con2.execute("SELECT max_power FROM activities").fetchone() == (250,)
+
+
+def test_retry_failed_reparses_unchanged_failures_only_when_asked(env, monkeypatch):
+    cfg, con = env
+    put(cfg, "a.fit", src="ride_power_hr.fit")
+    real = importer.parse_fit
+    monkeypatch.setattr(importer, "parse_fit", lambda p: (_ for _ in ()).throw(RuntimeError("parser bug")))
+    assert len(scan(con, cfg).failures) == 1
+    monkeypatch.setattr(importer, "parse_fit", real)                    # the bug is fixed
+    r = scan(con, cfg)                                                   # unchanged failure: still skipped
+    assert r.imported == 0 and r.unchanged == 1 and count(con) == 0
+    r = scan(con, cfg, retry_failed=True)
+    assert r.imported == 1 and not r.failures and count(con) == 1
+    assert con.execute("SELECT count(*) FROM ingest_failures").fetchone()[0] == 0
+    assert scan(con, cfg, retry_failed=True).unchanged == 1              # imported files are never re-read
+
+
+def test_cli_retry_failed_flag(tmp_path):
+    import subprocess, sys
+    fit = tmp_path / "fit"
+    fit.mkdir()
+    cfg = Config(fit, tmp_path / "d.duckdb", tmp_path / "s")
+    put(cfg, "a.fit", src="ride_power_hr.fit")
+    with db.connect(cfg.db_path) as con:                                 # pretend an earlier run failed on it
+        st = (fit / "a.fit").stat()
+        con.execute("INSERT INTO source_files VALUES (?, ?, ?, 'failed')", [str(fit / "a.fit"), st.st_size, st.st_mtime])
+    env = {**os.environ, "MYFITTY_FIT_DIR": str(fit), "MYFITTY_DB": str(cfg.db_path), "MYFITTY_SAMPLES_DIR": str(cfg.samples_dir)}
+    out = subprocess.run([sys.executable, "-m", "myfitty.cli", "ingest"], env=env, capture_output=True, text=True)
+    assert "0 imported" in out.stdout and "1 unchanged" in out.stdout
+    out = subprocess.run([sys.executable, "-m", "myfitty.cli", "ingest", "--retry-failed"], env=env, capture_output=True, text=True)
+    assert "1 imported" in out.stdout

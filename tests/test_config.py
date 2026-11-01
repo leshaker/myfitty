@@ -146,3 +146,30 @@ def test_cli_applies_config_and_reports_errors(tmp_path):
     write(tmp_path, "[[thresholds]]\nmetric='x'\nfrom=2020-01-01\nvalue=1\n")
     out = subprocess.run([sys.executable, "-m", "myfitty.ingest"], capture_output=True, text=True)
     assert out.returncode == 2 and "config error" in out.stderr
+
+
+def test_zone_edges_are_read_and_optional(tmp_path):
+    assert load_config().zone_edges is None
+    write(tmp_path, "[relative_effort]\nzone_edges = [114, 146, 153, 163]\n")
+    assert load_config().zone_edges == (114.0, 146.0, 153.0, 163.0)
+
+
+@pytest.mark.parametrize("edges", ["[114, 146, 153]", "[114, 146, 153, 150]", "[0, 146, 153, 163]",
+                                   "[114, 146, 153, \"x\"]", "163"])
+def test_invalid_zone_edges_are_rejected(tmp_path, edges):
+    write(tmp_path, f"[relative_effort]\nzone_edges = {edges}\n")
+    with pytest.raises(ConfigError, match="zone_edges"):
+        load_config()
+
+
+def test_rescore_uses_the_configured_zone_edges(tmp_path):
+    with db.connect(tmp_path / "t.duckdb") as con:
+        con.execute("INSERT INTO activities (start_time, local_date, device_serial, sport, moving_seconds, hr_histogram) "
+                    "VALUES ('2026-03-10 07:00:00', '2026-03-10', 'x', 'cycling', 3600, '{\"150\": 3600}')")
+        db.set_threshold(con, "max_hr", date(2026, 1, 1), 190)           # default edges (120/152/160/171) -> Z2
+        from myfitty.rescore import rescore
+        rescore(con)
+        assert con.execute("SELECT relative_effort FROM activities").fetchone()[0] == pytest.approx(60 * 0.3)
+        write(tmp_path, "[relative_effort]\nzone_edges = [114, 146, 153, 163]\n")   # 150 bpm is Z3 here
+        rescore(con)
+        assert con.execute("SELECT relative_effort, max_hr_used FROM activities").fetchone() == (pytest.approx(60 * 2.1), None)   # zones no longer come from max HR

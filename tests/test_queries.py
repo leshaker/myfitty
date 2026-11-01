@@ -73,3 +73,22 @@ def test_activities_filters(con):
     assert list(queries.activities(con, sport="running")["sport"]) == ["running"]
     assert len(queries.activities(con, start=date(2026, 1, 15))) == 1
     assert len(queries.activities(con, end=date(2026, 1, 15))) == 1
+
+
+def test_weekly_effort_sums_per_week_and_follows_sport(con):
+    def add_effort(d, sport, effort, serial):
+        con.execute("INSERT INTO activities (start_time, local_date, device_serial, sport, relative_effort) "
+                    "VALUES (?, ?, ?, ?, ?)", [f"{d} 08:00:00", d, serial, sport, effort])
+    add_effort(date(2026, 1, 5), "cycling", 120, "a")
+    add_effort(date(2026, 1, 7), "running", 60, "b")
+    add_effort(date(2026, 1, 8), "cycling", None, "c")                 # no heart rate: counts as zero
+    add_effort(date(2026, 1, 13), "running", 40, "d")
+    today = date(2026, 1, 14)
+    wk = queries.weekly_effort(con, today=today)
+    assert list(wk["week_start"]) == [date(2026, 1, 5), date(2026, 1, 12)] and list(wk["effort"]) == [180, 40]
+    assert list(queries.weekly_effort(con, "running", today=today)["effort"]) == [60, 40]
+    assert queries.weekly_effort(con, "swimming", today=today).empty
+
+
+def test_weekly_effort_empty_database(con):
+    assert queries.weekly_effort(con).empty

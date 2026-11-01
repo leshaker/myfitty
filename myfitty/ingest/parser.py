@@ -44,10 +44,17 @@ def _enum_name(v) -> str | None:
     return None if v is None else str(v)
 
 
+def _scalar(v):
+    """Some devices write several samples per record (array fields, e.g. enhanced_speed): take the latest."""
+    if isinstance(v, (list, tuple)):
+        v = next((x for x in reversed(v) if x is not None), None)
+    return v
+
+
 def _first(frame, *names):
     for n in names:
         if frame.has_field(n):
-            v = frame.get_value(n, fallback=None)
+            v = _scalar(frame.get_value(n, fallback=None))
             if v is not None:
                 return v
     return None

@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS activities (
     hr_histogram VARCHAR,                   -- JSON {bpm: seconds}
     tss DOUBLE,
     tss_method VARCHAR,                     -- 'power' | 'hr'
-    trimp DOUBLE,
+    relative_effort DOUBLE,
     ftp_used DOUBLE,
     thr_hr_used DOUBLE,
     max_hr_used DOUBLE,
@@ -93,6 +93,11 @@ def connect(path: Path | None = None, retries: int = 50, delay: float = 0.1):
             con.execute(SCHEMA)
             # databases created before max_power existed
             con.execute("ALTER TABLE activities ADD COLUMN IF NOT EXISTS max_power DOUBLE")
+            # trimp (Edwards) was replaced by the zone-weighted relative effort; old values are
+            # recomputed by `myfitty rescore`
+            cols = {r[0] for r in con.execute("DESCRIBE activities").fetchall()}
+            if "trimp" in cols and "relative_effort" not in cols:
+                con.execute("ALTER TABLE activities RENAME COLUMN trimp TO relative_effort")
         yield con
     finally:
         con.close()
