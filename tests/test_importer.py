@@ -239,3 +239,86 @@ def test_myfitty_entrypoint(tmp_path):
            "MYFITTY_SAMPLES_DIR": str(tmp_path / "s")}
     out = subprocess.run([sys.executable, "-m", "myfitty.cli", "ingest"], env=env, capture_output=True, text=True)
     assert out.returncode == 0 and "1 imported" in out.stdout
+
+
+# --- concurrent sessions (two browser tabs / a quick reload) ---
+def _many_files(cfg, n=15):
+    from datetime import datetime, timedelta, timezone
+    for i in range(n):
+        put(cfg, f"a{i}.fit", data=fitgen.ride_power_hr(
+            start=datetime(2026, 3, 1, 7, tzinfo=timezone.utc) + timedelta(days=i), serial=100 + i))
+
+
+def _concurrent_scans(cfg, threads=3):
+    import threading
+    results, errors = [], []
+
+    def go():
+        try:
+            with db.connect(cfg.db_path) as con:
+                results.append(scan(con, cfg))
+        except Exception as e:  # noqa: BLE001 - any crash is a failure of this test
+            errors.append(repr(e))
+
+    ts = [threading.Thread(target=go) for _ in range(threads)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    return results, errors
+
+
+@pytest.mark.parametrize("existing_db", [True, False])
+@pytest.mark.parametrize("trial", range(4))
+def test_concurrent_scans_neither_crash_nor_record_false_failures(tmp_path, existing_db, trial):
+    cfg = Config(tmp_path / "fit", tmp_path / "t.duckdb", tmp_path / "samples")
+    cfg.fit_dir.mkdir()
+    if existing_db:
+        with db.connect(cfg.db_path):
+            pass
+    _many_files(cfg)
+    results, errors = _concurrent_scans(cfg)
+    assert errors == []
+    assert sum(r.imported for r in results) == 15 and all(not r.failures for r in results)
+    with db.connect(cfg.db_path) as con:
+        assert count(con) == 15
+        assert con.execute("SELECT count(*) FROM source_files WHERE status = 'failed'").fetchone()[0] == 0
+        assert con.execute("SELECT count(*) FROM ingest_failures").fetchone()[0] == 0
+
+
+def test_losing_an_insert_race_counts_as_duplicate(env, monkeypatch):
+    cfg, con = env
+    put(cfg, "a.fit", src="ride_power_hr.fit")
+    real = importer.parse_fit
+
+    def parse_then_other_importer_wins(path):
+        act = real(path)  # another importer commits the same activity before we insert
+        with db.connect(cfg.db_path) as con2:
+            con2.execute("INSERT INTO activities (start_time, local_date, device_serial, sport) VALUES (?, ?, ?, 'cycling')",
+                         [act.start_time.replace(tzinfo=None), date(2026, 3, 10), act.serial])
+        return act
+
+    monkeypatch.setattr(importer, "parse_fit", parse_then_other_importer_wins)
+    r = scan(con, cfg)
+    assert r.duplicates == 1 and r.imported == 0 and not r.failures and count(con) == 1
+
+
+# --- maximum power ---
+def test_max_power_is_stored_when_present(env):
+    cfg, con = env
+    put(cfg, "a.fit", src="ride_power_hr.fit")
+    put(cfg, "b.fit", src="run_hr_only.fit")
+    scan(con, cfg)
+    rows = dict(con.execute("SELECT sport, max_power FROM activities").fetchall())
+    assert rows["cycling"] == 250 and rows["running"] is None            # fixture: 150 W / 250 W blocks; no power
+
+
+def test_old_database_is_migrated_and_max_power_backfilled(env):
+    cfg, con = env
+    put(cfg, "a.fit", src="ride_power_hr.fit")
+    scan(con, cfg)
+    con.execute("ALTER TABLE activities DROP COLUMN max_power")           # database from before the column existed
+    assert "max_power" not in [r[0] for r in con.execute("DESCRIBE activities").fetchall()]
+    con.close()
+    with db.connect(cfg.db_path) as con2:                                 # connecting adds the column
+        assert con2.execute("SELECT max_power FROM activities").fetchone() == (None,)
+        scan(con2, cfg)                                                   # next scan fills it from the samples
+        assert con2.execute("SELECT max_power FROM activities").fetchone() == (250,)

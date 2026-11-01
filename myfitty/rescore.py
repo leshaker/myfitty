@@ -10,6 +10,11 @@ SCORE_COLUMNS = ("tss", "tss_method", "trimp", "ftp_used", "thr_hr_used", "max_h
 
 def rescore(con, start: date | None = None, end: date | None = None) -> int:
     """Rescore activities with start <= local_date < end (None = unbounded). Returns rows changed."""
+    with db.WRITE_LOCK:
+        return _rescore(con, start, end)
+
+
+def _rescore(con, start, end) -> int:
     q = ("SELECT id, local_date, sport, moving_seconds, normalized_power, hr_histogram, "
          + ", ".join(SCORE_COLUMNS) + " FROM activities WHERE true")
     args = []
@@ -37,13 +42,15 @@ def rescore(con, start: date | None = None, end: date | None = None) -> int:
 
 def save_threshold(con, metric: str, effective_from: date, value: float) -> int:
     """Add/replace a threshold entry and rescore exactly the activities it affects."""
-    start, end = db.set_threshold(con, metric, effective_from, value)
-    return rescore(con, start, end)
+    with db.WRITE_LOCK:
+        start, end = db.set_threshold(con, metric, effective_from, value)
+        return rescore(con, start, end)
 
 
 def remove_threshold(con, metric: str, effective_from: date) -> int:
-    rng = db.delete_threshold(con, metric, effective_from)
-    return 0 if rng is None else rescore(con, *rng)
+    with db.WRITE_LOCK:
+        rng = db.delete_threshold(con, metric, effective_from)
+        return 0 if rng is None else rescore(con, *rng)
 
 
 def seed_thresholds(con, entries) -> int:
@@ -54,7 +61,7 @@ def seed_thresholds(con, entries) -> int:
     entry is invalid against what is already stored.
     """
     added = 0
-    for e in entries:
+    for e in entries:  # each save takes the write lock; a concurrent seeder just finds the entry present
         exists = con.execute("SELECT 1 FROM threshold_entries WHERE metric = ? AND effective_from = ?",
                              [e.metric, e.effective_from]).fetchone()
         if not exists:

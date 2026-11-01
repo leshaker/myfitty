@@ -29,6 +29,8 @@
 - [x] 4.4 Implement the folder importer with dedup (serial, or file hash fallback), per-file error capture and a result report, then score each new activity; verify tests for duplicate file, renamed duplicate, corrupt file in a batch, non-activity skip, retry after fix, and source folder unchanged
 - [x] 4.5 Implement rescoring of affected activities on threshold add/edit/delete and when the first threshold appears; verify tests that earlier activities keep their score and a corrected entry rescores only its range
 - [x] 4.6 Add scan-on-demand using `source_files` (skip unchanged files, retry changed failures, skip files modified within 2 s) and a `python -m myfitty.ingest` CLI; verify tests that an unchanged file is not re-parsed, a replaced failed file is imported, and a recently modified file is deferred
+- [x] 4.8 Serialize imports, threshold writes and schema setup within the process (write lock) and treat a lost unique-key race as a duplicate; verify tests that 3 concurrent scans of 15 new files on both an existing and a fresh database import each file once with no crashes or failure rows (and fail without the lock), and a test for the lost-race duplicate
+- [x] 4.9 Store maximum power (column, parser, importer), add the column to databases created before it existed, and backfill it from samples on scan; verify parser and importer tests for max power and a test migrating an old-schema database
 
 ## 5. Query layer and Streamlit page
 

@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from datetime import timezone
 from pathlib import Path
 
+import duckdb
+import pandas as pd
+
 from myfitty import db
 from myfitty.config import Config, load_config
 from myfitty.ingest.parser import NotAnActivity, parse_fit
@@ -33,10 +36,32 @@ class ScanResult:
 
 
 def scan(con, cfg: Config | None = None, now: float | None = None) -> ScanResult:
-    """Import every new or changed `.fit` file under the configured folder (which is only read)."""
-    cfg = cfg or load_config()
+    """Import every new or changed `.fit` file under the configured folder (which is only read).
+
+    Scans run one at a time within the process: a second session that opens while one is running
+    waits, then finds the files already imported.
+    """
+    with db.WRITE_LOCK:
+        return _scan(con, cfg or load_config(), now)
+
+
+def _backfill_max_power(con, samples_dir) -> None:
+    """Fill max_power for activities imported before the column existed, from their samples."""
+    rows = con.execute("SELECT id, sample_path FROM activities WHERE max_power IS NULL "
+                       "AND avg_power IS NOT NULL AND sample_path IS NOT NULL").fetchall()
+    for aid, rel in rows:
+        try:
+            mx = pd.read_parquet(samples_dir / rel, columns=["power"])["power"].max()
+        except (OSError, ValueError, KeyError):
+            continue  # samples missing: leave it null rather than fail the scan
+        if pd.notna(mx):
+            con.execute("UPDATE activities SET max_power = ? WHERE id = ?", [float(mx), aid])
+
+
+def _scan(con, cfg: Config, now: float | None) -> ScanResult:
     now = time.time() if now is None else now
     result = ScanResult()
+    _backfill_max_power(con, cfg.samples_dir)
     if not cfg.fit_dir.is_dir():
         result.folder_missing = True
         return result
@@ -86,15 +111,18 @@ def _import_file(con, cfg: Config, path: Path) -> str:
     rel = sample_relpath(act.sport, act.start_time, serial)
     write_samples(cfg.samples_dir, rel, act.samples)  # before the row, so a row never lacks samples
 
-    con.execute(
-        """INSERT INTO activities (start_time, local_date, device_serial, sport, sub_sport, source_path,
-               sample_path, elapsed_seconds, moving_seconds, distance_m, avg_hr, max_hr, avg_power,
-               normalized_power, hr_histogram, tss, tss_method, trimp, ftp_used, thr_hr_used,
-               max_hr_used, unscored_reason)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        [start_utc, local_date, serial, act.sport, act.sub_sport, str(path), rel, act.elapsed_seconds,
-         act.moving_seconds, act.distance_m, act.avg_hr, act.max_hr, act.avg_power, act.normalized_power,
-         json.dumps(act.hr_histogram) if act.hr_histogram else None,
-         score["tss"], score["tss_method"], score["trimp"], score["ftp_used"], score["thr_hr_used"],
-         score["max_hr_used"], score["unscored_reason"]])
+    try:
+        con.execute(
+            """INSERT INTO activities (start_time, local_date, device_serial, sport, sub_sport, source_path,
+                   sample_path, elapsed_seconds, moving_seconds, distance_m, avg_hr, max_hr, avg_power,
+                   max_power, normalized_power, hr_histogram, tss, tss_method, trimp, ftp_used, thr_hr_used,
+                   max_hr_used, unscored_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [start_utc, local_date, serial, act.sport, act.sub_sport, str(path), rel, act.elapsed_seconds,
+             act.moving_seconds, act.distance_m, act.avg_hr, act.max_hr, act.avg_power, act.max_power, act.normalized_power,
+             json.dumps(act.hr_histogram) if act.hr_histogram else None,
+             score["tss"], score["tss_method"], score["trimp"], score["ftp_used"], score["thr_hr_used"],
+             score["max_hr_used"], score["unscored_reason"]])
+    except duckdb.ConstraintException:  # lost a race with another importer: it is a duplicate
+        return "duplicate"
     return "imported"

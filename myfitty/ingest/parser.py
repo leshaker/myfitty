@@ -34,6 +34,7 @@ class ParsedActivity:
     avg_hr: float | None
     max_hr: float | None
     avg_power: float | None
+    max_power: float | None
     normalized_power: float | None
     hr_histogram: dict[int, int]
     samples: pd.DataFrame
@@ -119,6 +120,7 @@ def parse_fit(path: str | Path) -> ParsedActivity:
         avg_hr=float(hr.mean()) if len(hr) else None,
         max_hr=float(hr.max()) if len(hr) else None,
         avg_power=float(pw.fillna(0).mean()) if has_power else None,
+        max_power=float(pw.max()) if has_power else None,
         normalized_power=normalized_power(pw.to_numpy()) if has_power else None,
         hr_histogram={int(b): int(n) for b, n in hr.astype(int).value_counts().sort_index().items()},
         samples=samples,

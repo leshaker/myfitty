@@ -56,7 +56,11 @@ The system SHALL store for each activity: start time, elapsed and moving duratio
 
 #### Scenario: Power and heart rate present
 - **WHEN** an activity has both power and heart rate records
-- **THEN** normalized power, average power and the per-bpm time histogram are stored
+- **THEN** normalized power, average and maximum power, maximum heart rate and the per-bpm time histogram are stored
+
+#### Scenario: Database from an earlier version
+- **WHEN** the application opens a database whose activities lack a stored maximum power and their samples are available
+- **THEN** the maximum power is added and filled in from the samples on the next scan, without re-importing
 
 #### Scenario: No sensors
 - **WHEN** an activity has neither power nor heart rate
@@ -76,6 +80,17 @@ The system SHALL store each activity's samples, resampled to one per second, in 
 #### Scenario: Interrupted import
 - **WHEN** an import is interrupted after samples are written but before the activity is recorded
 - **THEN** the next scan imports the file normally and leaves exactly one set of samples
+
+### Requirement: Concurrent imports
+The system SHALL run overlapping import requests one after another, so that an activity imported by one request is never recorded as failed by another, and no request ends in an error.
+
+#### Scenario: Two sessions import at the same time
+- **WHEN** two sessions start an import of the same new files at the same moment
+- **THEN** every file is imported exactly once, no failure is recorded, and neither session reports an error
+
+#### Scenario: Same activity committed by another importer first
+- **WHEN** another importer stores the same activity between this importer's duplicate check and its insert
+- **THEN** the file is reported as a duplicate, not as a failure
 
 ### Requirement: Tolerate bad files
 The system SHALL NOT abort an import run because one file is corrupt, truncated or unsupported. It SHALL skip that file, record the reason, and continue.

@@ -23,14 +23,14 @@ def test_ride_with_power_and_hr():
     assert sum(a.hr_histogram.values()) == 1170  # pause seconds have no HR
     # NP computed on the 1 Hz series with the pause counted as zero power
     assert a.normalized_power == pytest.approx(normalized_power(a.samples["power"].to_numpy()))
-    assert a.normalized_power > a.avg_power > 0
+    assert a.max_power == 250 and a.normalized_power > a.avg_power > 0
 
 
 def test_hr_only_run():
     a = parse_fit(FIX / "run_hr_only.fit")
     assert a.sport == "running" and a.sub_sport == "street" and a.serial == "222"
     assert a.hr_histogram == {150: 600}
-    assert a.avg_power is None and a.normalized_power is None
+    assert a.avg_power is None and a.max_power is None and a.normalized_power is None
 
 
 def test_no_sensors_stores_duration_only():

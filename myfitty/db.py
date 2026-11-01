@@ -3,6 +3,7 @@
 DuckDB allows one read-write process at a time and Streamlit reruns the script on every
 interaction, so nothing here holds a connection open between calls.
 """
+import threading
 import time
 from contextlib import contextmanager
 from datetime import date
@@ -11,6 +12,12 @@ from pathlib import Path
 import duckdb
 
 METRICS = ("ftp", "threshold_hr", "max_hr")
+
+# Streamlit runs each browser session in its own thread, so two sessions can import or edit at the
+# same moment. DuckDB then aborts one transaction with a conflict. Writers take WRITE_LOCK (re-entrant)
+# so they run one after another; schema setup has its own lock so connecting never waits for an import.
+WRITE_LOCK = threading.RLock()
+_SCHEMA_LOCK = threading.Lock()
 
 SCHEMA = """
 CREATE SEQUENCE IF NOT EXISTS activity_id_seq;
@@ -29,6 +36,7 @@ CREATE TABLE IF NOT EXISTS activities (
     avg_hr DOUBLE,
     max_hr DOUBLE,
     avg_power DOUBLE,
+    max_power DOUBLE,
     normalized_power DOUBLE,
     hr_histogram VARCHAR,                   -- JSON {bpm: seconds}
     tss DOUBLE,
@@ -81,7 +89,10 @@ def connect(path: Path | None = None, retries: int = 50, delay: float = 0.1):
                 raise
             time.sleep(delay)
     try:
-        con.execute(SCHEMA)
+        with _SCHEMA_LOCK:
+            con.execute(SCHEMA)
+            # databases created before max_power existed
+            con.execute("ALTER TABLE activities ADD COLUMN IF NOT EXISTS max_power DOUBLE")
         yield con
     finally:
         con.close()
