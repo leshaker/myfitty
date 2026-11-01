@@ -1,10 +1,9 @@
-# Spec Delta
+# fit-ingest Specification
 
 ## Purpose
-
 Import activities from FIT files in a local folder into the app's database, regardless of which device or service produced the file, without creating duplicates.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Import FIT files from a configured folder
 The system SHALL scan a configured folder, including subfolders, for `.fit` files and import each one as an activity. The folder SHALL be treated as read-only.
@@ -102,10 +101,6 @@ The system SHALL NOT abort an import run because one file is corrupt, truncated 
 #### Scenario: Non-activity FIT file
 - **WHEN** a FIT file contains no session message (for example a settings or monitoring file)
 - **THEN** it is skipped with a "not an activity" reason
-
-#### Scenario: Failed file is retried on request
-- **WHEN** a file failed earlier, is unchanged, and an import is run with the retry option
-- **THEN** it is read again and imported if it now parses, and files that already imported are not read again
 
 #### Scenario: Failed file is retried after being fixed
 - **WHEN** a previously failed file is replaced with a valid one

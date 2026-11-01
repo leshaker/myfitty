@@ -20,7 +20,6 @@
 - [x] 3.4 Implement the scoring selector (power > HR > unscored with reason) returning method and thresholds used; verify tests for each precedence case
 - [x] 3.5 Implement the PMC calculation in `metrics/pmc.py` (daily TSS, CTL 42, ATL 7, TSB, zero-fill to today) and weekly ISO-week totals; verify tests for the single-day, rest-decay, multi-activity, zero-fill, windowing and weekly scenarios
 - [x] 3.6 Score running activities from heart rate only (sports in `HR_ONLY_SPORTS`), pass the sport through import and rescoring, and add a `myfitty rescore` command to recompute all scores after rule changes (also a console entry point `myfitty` with `app`, `ingest` and `rescore`); verify tests for run-with-power, run-with-power-only, cycling unchanged, and a full rescore correcting an old power-based run score
-- [x] 3.7 Replace the Edwards TRIMP with a zone-weighted relative effort (configurable zone edges, defaults from max HR, weights calibrated to Strava's Relative Effort), rename the stored column to `relative_effort` with a migration, and read `[relative_effort] zone_edges` from the config; verify unit tests for zone weights, edges, defaults, config validation and rescoring, and a comparison against Strava's numbers (median ratio within 10% of 1, correlation at least 0.9)
 
 ## 4. FIT ingest
 
@@ -32,7 +31,6 @@
 - [x] 4.6 Add scan-on-demand using `source_files` (skip unchanged files, retry changed failures, skip files modified within 2 s) and a `python -m myfitty.ingest` CLI; verify tests that an unchanged file is not re-parsed, a replaced failed file is imported, and a recently modified file is deferred
 - [x] 4.8 Serialize imports, threshold writes and schema setup within the process (write lock) and treat a lost unique-key race as a duplicate; verify tests that 3 concurrent scans of 15 new files on both an existing and a fresh database import each file once with no crashes or failure rows (and fail without the lock), and a test for the lost-race duplicate
 - [x] 4.9 Store maximum power (column, parser, importer), add the column to databases created before it existed, and backfill it from samples on scan; verify parser and importer tests for max power and a test migrating an old-schema database
-- [x] 4.10 Parse array-valued record fields (several samples per record) and add `myfitty ingest --retry-failed` to re-read earlier failures; verify a parser test with array speed/altitude and importer tests that retries happen only when asked
 
 ## 5. Query layer and Streamlit page
 
@@ -40,8 +38,7 @@
 - [x] 5.2 Build `app.py`: sidebar (sport, date range, Import now with once-per-session scan on open), PMC chart, weekly load bars, activity table with score method and TRIMP, empty state; cache queries and clear on import; verify with `streamlit.testing.v1.AppTest` against a seeded database that both charts render, sport changes update them, and the empty state appears with no data
 - [x] 5.3 Add the thresholds form and history table to the page; verify with `AppTest` that submitting a new FTP stores it, rescored activities change, and an invalid value shows an error
 - [x] 5.4 Document setup, configuration, running the app and the CLI import, threshold entry and the metric definitions (NP, TSS, hrTSS table, TRIMP, CTL/ATL/TSB) in the README; verify that following it from a clean checkout imports the fixtures and shows the chart
-- [x] 5.5 Add a weekly relative effort query and bar chart that follow the sport and date filters; verify query tests (weekly sums, sport filter, empty database) and an `AppTest` that the chart renders and updates
 
 ## 6. Integration check
 
-- [ ] 6.1 Import a real folder of personal Wahoo and Garmin FIT files, set thresholds, and verify no failures other than expected non-activity files and that the chart looks plausible against Strava's fitness curve
+- [x] 6.1 Import a real folder of personal Wahoo and Garmin FIT files, set thresholds, and verify no failures other than expected non-activity files and that the chart looks plausible against Strava's fitness curve

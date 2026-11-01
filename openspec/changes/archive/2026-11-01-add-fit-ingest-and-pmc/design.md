@@ -7,7 +7,7 @@ Greenfield repo; nothing exists yet besides OpenSpec config. Single user, runs l
 ## Goals / Non-Goals
 
 **Goals:**
-- A pure, unit-testable metrics layer (no I/O) so TSS/relative effort/PMC can be verified against hand-computed values.
+- A pure, unit-testable metrics layer (no I/O) so TSS/TRIMP/PMC can be verified against hand-computed values.
 - Idempotent ingest: re-running over the same folder any number of times gives the same database.
 - Store enough per-activity data to rescore without re-parsing FIT files: summary metrics (NP, per-bpm time histogram) in the database for fast rescoring, and raw 1 Hz samples in Parquet for anything else.
 
@@ -28,7 +28,7 @@ Greenfield repo; nothing exists yet besides OpenSpec config. Single user, runs l
 
 **Summary stored at ingest.** `normalized_power` (30 s rolling mean of power, 4th-power mean, 4th root; records are resampled to 1 Hz first and gaps count as zero power), `avg_hr`, `max_hr`, `avg_power`, `moving_seconds`, and `hr_histogram` (JSON: bpm → seconds). Rescoring after a threshold change uses these only. NP for activities under 30 s of power data is null.
 
-**Scores are computed from stored summary, stored in `activities`** (`tss`, `tss_method`, `relative_effort`, `ftp_used`, `thr_hr_used`, `max_hr_used`, `unscored_reason`). Storing them makes threshold history stable (the spec requirement) and makes charts a cheap sum; a rescore function updates the affected rows when a threshold entry is edited.
+**Scores are computed from stored summary, stored in `activities`** (`tss`, `tss_method`, `trimp`, `ftp_used`, `thr_hr_used`, `max_hr_used`, `unscored_reason`). Storing them makes threshold history stable (the spec requirement) and makes charts a cheap sum; a rescore function updates the affected rows when a threshold entry is edited.
 
 **Running is HR-only.** `score_activity` takes the sport; sports in `HR_ONLY_SPORTS` (`running`) have power ignored, so they score from hrTSS or are unscored (`no_data` without HR, `no_threshold` without threshold HR). Cycling keeps power > HR. The set lives in `metrics/constants.py` next to the other tunables. Alternatives: a setting in the config file (deferred until a second sport needs it), or scoring runs by a separate running threshold power (deferred with rTSS).
 
@@ -40,15 +40,13 @@ Greenfield repo; nothing exists yet besides OpenSpec config. Single user, runs l
 
 **hrTSS.** Zones as % of threshold HR: Z1 <81%, Z2 81–89%, Z3 90–93%, Z4 94–99%, Z5 ≥100%, contributing 20/40/60/80/100 TSS per hour (the TrainingPeaks-style approximation). Chosen as a simple, documented table; the spec only requires roughly 100 TSS for an hour at threshold. The table lives in one constants module so it can be tuned.
 
-**Relative effort.** Zone-weighted minutes: `sum(minutes in zone × weight)` over five HR zones, with weights `(0.3, 0.3, 2.1, 2.1, 2.4)` per minute (`metrics/constants.py`). Zone edges are four bpm values from `[relative_effort] zone_edges` in the config file, or by default fractions of the applicable max HR (63/80/84/90%). The score is stored in `activities.relative_effort` (renamed from `trimp`; connecting to an older database renames the column, and `myfitty rescore` recomputes the values) and charted per ISO week. Calibration: the weights are a monotone least-squares fit of per-zone minutes (zones 114/146/153/163 bpm) to the Strava Relative Effort in the owner's export, on about 390 activities. Result against Strava: log-correlation 0.95, median ratio 1.02, per-activity error about 19% for rides and runs; walks and hikes come out roughly 40% low, which is acceptable. Alternatives measured on the same data: Edwards TRIMP (the previous formula; log-correlation 0.87, about 4-5x too high for rides and runs, p90/p10 ratio spread 5.2x), Banister TRIMP (0.91, 3.9x), smooth power/exponential curves (0.91, 3.3x), and five unconstrained zone weights (0.95 but Z3 above Z4, so not monotone). Strava's own algorithm is proprietary and its zones changed over the years, so an exact match is not a goal.
+**TRIMP.** Edwards zone-weighted formula on % of max HR, as in the spec. Stored per activity but not charted in this phase (shown in the activity table).
 
 **PMC.** Daily TSS series per sport filter (a SQL `GROUP BY` over `activities`), then `CTL_t = CTL_{t-1} + (TSS_t − CTL_{t-1}) / 42`, same for ATL with 7. TSB is same-day CTL − ATL, as the brief defines it (note: TrainingPeaks uses the previous day's values; not copied here). Always computed from the first activity so windowing only slices the result. Days use the activity's local start date; the local timezone is the machine's, since FIT stores UTC with an optional offset.
 
 **Query layer.** `queries.py` exposes `pmc(sport, start, end)`, `weekly(sport)`, `activities(sport, start, end)` and `sports()`, plus threshold CRUD in `db.py`. The Streamlit page only calls these. There is no REST API in this phase; if a later change needs one (e.g. Garmin sync as a separate service), it can wrap the same functions.
 
 **Concurrency.** Streamlit runs each browser session in its own thread, and a reload starts a new session, so two imports (or an import and a threshold edit) can overlap. DuckDB aborts one of two conflicting transactions, which crashed the page and could record a good file as failed. Writers (`scan`, threshold save/remove/seed, `rescore`) take one re-entrant `db.WRITE_LOCK`, so a second import waits and then finds the files already imported; schema setup has its own lock so opening a connection never waits for an import. A unique-key violation on the activity insert (another process won the race) is reported as a duplicate. Across processes (CLI vs app) DuckDB's file lock plus the connect retry already serialize. Alternative: a lock file, rejected as unnecessary for one process.
-
-**Retrying failures.** Unchanged failed files are skipped on later scans, so a parser fix does not help them by itself. `myfitty ingest --retry-failed` re-reads every failed file once (imported files are never re-read).
 
 **Ingest trigger.** No watcher in this phase. The app scans the FIT folder once per browser session (guarded with `st.session_state`) and on an "Import now" button; `python -m myfitty.ingest` does the same from the command line. A `source_files(path, size, mtime, status)` table lets a scan skip unchanged files cheaply, retry failed files only when their size or mtime changed, and avoid reading files modified in the last 2 s (half-written copies). The folder path comes from `MYFITTY_FIT_DIR` (default `./fit`), the DB from `MYFITTY_DB`.
 

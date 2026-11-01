@@ -13,7 +13,7 @@ uv venv .venv && uv pip install -e '.[dev]'    # setup
 uv run myfitty app                             # start the UI (extra args go to `streamlit run`)
 uv run myfitty ingest                          # import the FIT folder (--retry-failed re-reads earlier failures)
 uv run myfitty rescore                         # recompute all stored scores after a scoring-rule change
-openspec validate add-fit-ingest-and-pmc --strict
+openspec validate <change> --strict            # e.g. add-relative-effort; `openspec list` shows active changes
 python -m tests.fitgen                         # regenerate tests/fixtures/*.fit (a test fails if they drift)
 ```
 
@@ -22,7 +22,9 @@ python -m tests.fitgen                         # regenerate tests/fixtures/*.fit
 Behavior is specified with OpenSpec in `openspec/changes/<change>/` (proposal, delta specs per capability,
 design, tasks). When code changes behavior, update the matching spec scenario, `design.md` and `tasks.md`
 in the same change, and keep `openspec validate --strict` clean. Tasks are checkboxes in `tasks.md`.
-The current change is `add-fit-ingest-and-pmc`; task 6.1 (import the real FIT folder) needs the owner's own files.
+Changes are archived after merge (`/opsx:archive`), which syncs their deltas into `openspec/specs/`; a new change
+can only MODIFY requirements that already exist there, so archive the previous change first. Archived so far:
+`add-fit-ingest-and-pmc`. Active: `add-relative-effort` (implemented; archive after its PR is merged).
 
 ## Architecture rules
 

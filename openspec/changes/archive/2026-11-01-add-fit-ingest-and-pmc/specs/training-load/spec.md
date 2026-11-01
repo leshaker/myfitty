@@ -65,32 +65,16 @@ The system SHALL provide a command that recomputes the scores of every stored ac
 - **WHEN** the rescore command runs and every stored score already matches current rules
 - **THEN** no activity is modified
 
-### Requirement: Relative effort
-For an activity with heart rate data and heart rate zones, the system SHALL compute a relative effort score as the sum over five zones of minutes in the zone times a per-minute weight that never decreases from the lowest zone to the highest. The weights SHALL be calibrated so the score is comparable in size to Strava's Relative Effort. Zones are defined by four ascending bpm edges; a heart rate on an edge belongs to the higher zone.
+### Requirement: Relative effort (TRIMP)
+For an activity with heart rate data and an applicable max HR, the system SHALL compute a relative effort score as the sum over five heart rate zones of minutes in zone times zone weight 1 to 5, with zones at 50–60%, 60–70%, 70–80%, 80–90% and 90–100% of max HR. Time below 50% SHALL count as zero.
 
-#### Scenario: Higher zones count more per minute
-- **WHEN** an activity has 10 minutes in zone 1, another has 10 minutes in zone 3, and a third has 10 minutes in zone 5
-- **THEN** their relative effort scores are strictly increasing between zones 1 and 3 and between zones 3 and 5, and zone 1 is never above zone 2
+#### Scenario: 30 minutes in zone 3
+- **WHEN** an activity has 30 minutes at 75% of max HR and nothing else above 50%
+- **THEN** relative effort is 90
 
-#### Scenario: Time and intensity both raise the score
-- **WHEN** two activities have the same heart rate but one lasts twice as long
-- **THEN** the longer one scores exactly twice as much
-
-#### Scenario: Configured zone edges
-- **WHEN** zone edges of 114, 146, 153 and 163 bpm are configured
-- **THEN** an activity spent at 150 bpm is scored in zone 3, regardless of max HR
-
-#### Scenario: Zones derived from max HR
-- **WHEN** no zone edges are configured and a max HR is in effect
-- **THEN** the zone edges are fixed fractions of that max HR, and the max HR used is recorded with the score
-
-#### Scenario: No heart rate or no zones
-- **WHEN** an activity has no heart rate data, or has neither configured zone edges nor an applicable max HR
+#### Scenario: No heart rate
+- **WHEN** an activity has no heart rate data
 - **THEN** relative effort is null
-
-#### Scenario: Close to Strava for rides and runs
-- **WHEN** the score is compared with Strava's Relative Effort over the owner's rides and runs
-- **THEN** the median ratio is within 10% of 1 and the correlation is at least 0.9
 
 ### Requirement: Scores are stored with their inputs
 The system SHALL store, with each score, the method and the threshold values used, so any score can be explained.
