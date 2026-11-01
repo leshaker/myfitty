@@ -11,10 +11,14 @@ dependencies = [
     "pyarrow>=17",
     "numpy>=1.26",
     "pandas>=2.2",
+    "watchdog>=6.0.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+
+[project.scripts]
+myfitty = "myfitty.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

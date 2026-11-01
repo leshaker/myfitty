@@ -137,3 +137,14 @@ def test_threshold_delete_rescores(env):
     with db.connect(env / "t.duckdb") as con:
         assert db.list_thresholds(con) == []
         assert con.execute("SELECT tss, unscored_reason FROM activities").fetchone() == (None, "no_threshold")
+
+
+def test_config_thresholds_loaded_at_start(env):
+    (env / "myfitty.toml").write_text(
+        f'[[thresholds]]\nmetric = "ftp"\nfrom = {date.today() - timedelta(days=30)}\nvalue = 250\n')
+    seed_unscored(env)
+    at = run()
+    with db.connect(env / "t.duckdb") as con:
+        assert db.list_thresholds(con)[0][2] == 250
+        assert con.execute("SELECT tss FROM activities").fetchone()[0] == pytest.approx(100)
+    assert at.dataframe[0].value["TSS"].iloc[0] == pytest.approx(100)

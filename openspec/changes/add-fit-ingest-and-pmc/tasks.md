@@ -10,6 +10,7 @@
 - [x] 2.1 Create the DuckDB schema (`activities` with UNIQUE start time + serial, `threshold_entries`, `ingest_failures`) applied at startup, via short-lived connections with lock retry, plus a `source_files` table; verify tests that the schema is created idempotently, survives reopening the file, and that a second connection succeeds after the first closes
 - [x] 2.2 Implement threshold storage and by-date lookup (latest on or before date, else earliest, else none) and validation; verify tests for the thresholds scenarios (between entries, before first, none, same-date replace, invalid values)
 - [x] 2.3 Add threshold create/replace/delete functions in `db.py` with validation errors; verify tests for add, replace, delete and rejected invalid input
+- [x] 2.4 Load an optional `myfitty.toml` (folders and a threshold history) at startup in the app and the `myfitty ingest` CLI, seeding missing threshold entries without overwriting stored ones and rescoring; verify tests for parsing, precedence over defaults, env override, invalid entries, idempotent seeding, and UI edits surviving a restart
 
 ## 3. Metrics (pure functions)
 
@@ -18,6 +19,7 @@
 - [x] 3.3 Implement TRIMP in `metrics/trimp.py`; verify 30 min at 75% max HR → 90 and no HR → null
 - [x] 3.4 Implement the scoring selector (power > HR > unscored with reason) returning method and thresholds used; verify tests for each precedence case
 - [x] 3.5 Implement the PMC calculation in `metrics/pmc.py` (daily TSS, CTL 42, ATL 7, TSB, zero-fill to today) and weekly ISO-week totals; verify tests for the single-day, rest-decay, multi-activity, zero-fill, windowing and weekly scenarios
+- [x] 3.6 Score running activities from heart rate only (sports in `HR_ONLY_SPORTS`), pass the sport through import and rescoring, and add a `myfitty rescore` command to recompute all scores after rule changes (also a console entry point `myfitty` with `app`, `ingest` and `rescore`); verify tests for run-with-power, run-with-power-only, cycling unchanged, and a full rescore correcting an old power-based run score
 
 ## 4. FIT ingest
 

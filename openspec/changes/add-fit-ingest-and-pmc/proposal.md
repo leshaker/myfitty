@@ -12,13 +12,15 @@ Strava Premium's training-status features (fitness, fatigue, form, relative effo
 - Store FTP, threshold HR and max HR with effective dates; each activity is scored with the thresholds in effect on its date.
 - Compute per-activity load: TSS from power when available, otherwise hrTSS from HR; plus a zone-weighted TRIMP as "relative effort".
 - Compute the performance management chart: CTL (42-day), ATL (7-day), TSB (CTL − ATL), and weekly load.
+- An optional `myfitty.toml` read at startup (folders and a threshold history); configured thresholds fill gaps without overwriting what is stored, and the personal file is git-ignored.
+- Console commands: `myfitty app`, `myfitty ingest` and `myfitty rescore`.
 - A Streamlit page showing the PMC chart and weekly load bars, with sport and date filters and a thresholds form.
 
 Out of scope (later changes): a background folder watcher/sync daemon, Garmin Personal API sync, Wahoo/Dropbox specifics, GPS tracks and heatmaps, pace-based rTSS, the unspecified 4th feature.
 
 Assumptions (answers to the brief's open questions; revisit if wrong):
-- Power is used when a file has it, otherwise HR. This works with or without a power meter.
-- Running uses hrTSS in this phase; rTSS is deferred.
+- Cycling uses power when a file has it and an FTP exists, otherwise HR. This works with or without a power meter.
+- Running is always scored by HR, even when the watch records running power, because running power is not comparable with a cycling FTP. Pace-based rTSS is deferred.
 - One combined fitness number across sports, with a per-sport filter that recomputes the curves from only that sport's load.
 - Streamlit with Altair for the UI (no REST API in this phase). No background watcher: Streamlit only runs code while a browser session is open, so ingest happens on app open and on demand.
 - DuckDB for mutable tables (activities, thresholds). Parquet only for bulk columnar data: each activity's 1 Hz samples, which the later heatmaps change will read for GPS.

@@ -1,16 +1,20 @@
+from myfitty.metrics.constants import HR_ONLY_SPORTS
 from myfitty.metrics.trimp import trimp
 from myfitty.metrics.tss import hr_tss, power_tss
 
 
-def score_activity(summary: dict, thresholds: dict) -> dict:
+def score_activity(summary: dict, thresholds: dict, sport: str | None = None) -> dict:
     """Score one activity from its stored summary and the thresholds in effect on its date.
 
     summary: moving_seconds, normalized_power, hr_histogram ({bpm: seconds} or None).
     thresholds: ftp, threshold_hr, max_hr (each possibly None).
-    Power TSS wins over hrTSS; otherwise the activity is unscored with a reason.
+    Power TSS wins over hrTSS, except for HR-only sports (running), where power is ignored;
+    otherwise the activity is unscored with a reason.
     """
     ftp, thr, mx = (thresholds.get(k) for k in ("ftp", "threshold_hr", "max_hr"))
     npw = summary.get("normalized_power")
+    if sport in HR_ONLY_SPORTS:
+        npw = None
     hist = summary.get("hr_histogram") or None
     out = dict(tss=None, tss_method=None, trimp=None, ftp_used=None, thr_hr_used=None,
                max_hr_used=None, unscored_reason=None)

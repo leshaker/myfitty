@@ -30,6 +30,14 @@ Greenfield repo; nothing exists yet besides OpenSpec config. Single user, runs l
 
 **Scores are computed from stored summary, stored in `activities`** (`tss`, `tss_method`, `trimp`, `ftp_used`, `thr_hr_used`, `max_hr_used`, `unscored_reason`). Storing them makes threshold history stable (the spec requirement) and makes charts a cheap sum; a rescore function updates the affected rows when a threshold entry is edited.
 
+**Running is HR-only.** `score_activity` takes the sport; sports in `HR_ONLY_SPORTS` (`running`) have power ignored, so they score from hrTSS or are unscored (`no_data` without HR, `no_threshold` without threshold HR). Cycling keeps power > HR. The set lives in `metrics/constants.py` next to the other tunables. Alternatives: a setting in the config file (deferred until a second sport needs it), or scoring runs by a separate running threshold power (deferred with rTSS).
+
+**Rescoring on demand.** Scores are stored, so changing a rule leaves old rows stale. `myfitty rescore` re-runs the scorer over all activities from the stored summary (no FIT parsing) and updates only rows whose score changed. Threshold edits still rescore just their affected range.
+
+**Config file.** Optional `myfitty.toml` (or `MYFITTY_CONFIG`) parsed with `tomllib`. It sets `fit_dir`, `db_path`, `samples_dir` (environment variables win, relative paths are relative to the file) and lists `[[thresholds]]` entries. At startup, in the app once per session and in `myfitty ingest`, entries whose (metric, date) are not stored are inserted through the normal save-and-rescore path; stored entries are never overwritten or deleted, so UI edits win. Invalid files raise a `ConfigError` shown to the user. The personal file is git-ignored; `myfitty.example.toml` documents the format. Alternative considered: make the file authoritative (sync both ways), rejected because it would silently discard values edited in the UI.
+
+**Console entry point.** `myfitty app` (runs Streamlit on `app.py`, extra options pass through), `myfitty ingest`, `myfitty rescore`.
+
 **hrTSS.** Zones as % of threshold HR: Z1 <81%, Z2 81–89%, Z3 90–93%, Z4 94–99%, Z5 ≥100%, contributing 20/40/60/80/100 TSS per hour (the TrainingPeaks-style approximation). Chosen as a simple, documented table; the spec only requires roughly 100 TSS for an hour at threshold. The table lives in one constants module so it can be tuned.
 
 **TRIMP.** Edwards zone-weighted formula on % of max HR, as in the spec. Stored per activity but not charted in this phase (shown in the activity table).

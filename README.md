@@ -9,25 +9,47 @@ in `openspec/`.
 ```bash
 uv venv .venv && uv pip install -e '.[dev]'     # or: python -m venv .venv && .venv/bin/pip install -e '.[dev]'
 export MYFITTY_FIT_DIR=~/Dropbox/Apps/WahooFitness    # any folder of .fit files (read-only)
-.venv/bin/streamlit run myfitty/app.py
+uv run myfitty app            # same as: .venv/bin/streamlit run myfitty/app.py
 ```
 
-1. Open the page and expand **Thresholds** in the sidebar. Add your FTP, threshold HR and max HR
-   with the date they apply from. Without them activities are listed but unscored.
+1. Define your FTP, threshold HR and max HR with the dates they apply from, either in `myfitty.toml`
+   (see below) or in the **Thresholds** panel in the sidebar. Without them activities are listed but unscored.
 2. The app scans the FIT folder when you open it and whenever you press **Import now**. Files
    already imported (same size and modification time) are skipped; files modified in the last
    2 seconds are left for the next scan.
 3. Pick a sport and date range in the sidebar. CTL and ATL always use your full history, so a
    shorter range never changes the values.
 
-Import from the command line (for example from cron) with `python -m myfitty.ingest`. The app and the CLI
+Import from the command line (for example from cron) with `uv run myfitty ingest` (or `python -m myfitty.ingest`). The app and the CLI
 can both be used, but not at the exact same moment (DuckDB allows one writer; each waits a few
 seconds for the other).
 
-Try it with the bundled fixtures: `MYFITTY_FIT_DIR=tests/fixtures streamlit run myfitty/app.py`
+Try it with the bundled fixtures: `MYFITTY_FIT_DIR=tests/fixtures uv run myfitty app`
 (their dates are in March 2026, so widen the date range, which defaults to the last 180 days).
 
+## Config file
+
+Optional `myfitty.toml` (copy `myfitty.example.toml`; it is git-ignored) is read at startup by the app and
+by `myfitty ingest`. Point to another file with `MYFITTY_CONFIG`. It can set the folders and a
+threshold history:
+
+```toml
+fit_dir = "~/Dropbox/Apps/WahooFitness"
+
+[[thresholds]]
+metric = "ftp"          # ftp | threshold_hr | max_hr
+from = 2021-01-17
+value = 280
+```
+
+Configured thresholds are added to the database at startup when that (metric, date) is not already
+there, and the affected activities are rescored. Values you edit or add in the app are never
+overwritten or removed by the file, so it only fills gaps. Invalid files show an error and stop the
+app (or exit with code 2 for the CLI). Relative paths in the file are relative to the file's folder.
+
 ## Configuration (environment variables)
+
+Environment variables override the file.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -69,7 +91,10 @@ Editing or deleting an entry rescores only the activities it applies to.
   `x += (tss - x) / N`, starting from 0. Days without activity count as 0 and the series runs to today.
 - **TSB** (form) = CTL − ATL on the same day.
 - **Weekly load**: total TSS per ISO week (Monday start).
-- Power TSS is used when both power and FTP exist, otherwise hrTSS, otherwise the activity is unscored
+- Running is always scored by hrTSS, even when the file has power: running power is not comparable
+  with a cycling FTP. The sports are listed in `HR_ONLY_SPORTS` in `myfitty/metrics/constants.py`.
+  After changing scoring rules, run `uv run myfitty rescore`.
+- Otherwise, power TSS is used when both power and FTP exist, then hrTSS, otherwise the activity is unscored
   (`no_data` or `no_threshold`) and counts as 0 load.
 
 ## Tests

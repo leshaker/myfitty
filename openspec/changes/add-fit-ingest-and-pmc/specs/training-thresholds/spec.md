@@ -52,3 +52,23 @@ The system SHALL reject threshold values that are not positive numbers, and a th
 #### Scenario: Invalid value
 - **WHEN** the user submits an FTP of 0 or a negative number
 - **THEN** the request is rejected with a validation error and nothing is stored
+
+### Requirement: Thresholds from a config file
+The system SHALL read an optional config file at startup and add the threshold entries it lists that are not already stored for the same metric and date. It SHALL NOT overwrite or remove stored entries, and SHALL rescore the activities those new entries affect.
+
+#### Scenario: Seeding an empty database
+- **WHEN** the config lists four FTP entries and none are stored
+- **THEN** all four are stored and existing activities are rescored with them
+
+#### Scenario: UI edits win
+- **WHEN** a stored FTP entry for a date differs from the config's value for that date
+- **THEN** the stored value is kept
+
+#### Scenario: Startup is idempotent
+- **WHEN** the application starts twice with the same config
+- **THEN** the second start adds nothing and rescored values are unchanged
+
+#### Scenario: Invalid config
+- **WHEN** the config has an unknown metric, a non-positive value, or an unparseable date
+- **THEN** startup reports which entry is invalid and does not change stored thresholds
+

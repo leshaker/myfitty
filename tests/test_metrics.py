@@ -147,3 +147,25 @@ def test_weekly_sums_monday_start():
     wk = weekly_load(daily_pmc(s, today=date(2026, 1, 12)))
     assert list(wk["week_start"]) == [date(2026, 1, 5), date(2026, 1, 12)]
     assert list(wk["tss"]) == [180, 10]
+
+
+# --- running is scored by HR even with power ---
+def test_running_ignores_power_and_uses_hr():
+    s = {"moving_seconds": 7200, "normalized_power": 350, "hr_histogram": {145: 7200}}
+    ride = score_activity(s, TH, "cycling")
+    run = score_activity(s, TH, "running")
+    assert ride["tss_method"] == "power" and ride["tss"] > 300          # (350/250)^2 x 2 h
+    assert run["tss_method"] == "hr" and run["thr_hr_used"] == 165 and run["ftp_used"] is None
+    assert run["tss"] == pytest.approx(2 * 40)                           # 145/165 = 88% -> zone 2, 2 h
+    assert score_activity(s, TH)["tss_method"] == "power"                # sport unknown: unchanged
+
+
+def test_running_with_only_power_is_unscored():
+    r = score_activity({"moving_seconds": 3600, "normalized_power": 300}, TH, "running")
+    assert r["tss"] is None and r["unscored_reason"] == "no_data"
+
+
+def test_running_without_threshold_hr_is_not_rescued_by_ftp():
+    r = score_activity({"moving_seconds": 3600, "normalized_power": 300, "hr_histogram": {150: 3600}},
+                       {**TH, "threshold_hr": None}, "running")
+    assert r["tss"] is None and r["unscored_reason"] == "no_threshold"

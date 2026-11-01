@@ -82,7 +82,7 @@ def _import_file(con, cfg: Config, path: Path) -> str:
     score = score_activity(
         {"moving_seconds": act.moving_seconds, "normalized_power": act.normalized_power,
          "hr_histogram": act.hr_histogram},
-        db.thresholds_on(con, local_date))
+        db.thresholds_on(con, local_date), act.sport)
     rel = sample_relpath(act.sport, act.start_time, serial)
     write_samples(cfg.samples_dir, rel, act.samples)  # before the row, so a row never lacks samples
 

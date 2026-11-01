@@ -1,0 +1,28 @@
+# Copy to myfitty.toml (git-ignored) and edit. Loaded at startup by the app and by `myfitty ingest`.
+# Looked up as ./myfitty.toml, or the file named by the MYFITTY_CONFIG environment variable.
+# Environment variables MYFITTY_FIT_DIR / MYFITTY_DB / MYFITTY_SAMPLES_DIR override these paths.
+# Relative paths here are relative to this file's folder.
+
+fit_dir = "~/Dropbox/Apps/WahooFitness"
+# db_path = "data/myfitty.duckdb"
+# samples_dir = "data/samples"
+
+# Threshold history. Each value applies from its date onward. Only changes need an entry.
+# Entries are added to the database at startup if that (metric, date) is not already there;
+# values you edit or add in the app are never overwritten or removed by this file.
+# metric: "ftp" (W), "threshold_hr" (bpm), "max_hr" (bpm)
+
+[[thresholds]]
+metric = "ftp"
+from = 2020-11-29
+value = 251
+
+[[thresholds]]
+metric = "threshold_hr"
+from = 2020-11-29
+value = 163
+
+[[thresholds]]
+metric = "max_hr"
+from = 2020-11-29
+value = 182

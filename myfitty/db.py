@@ -10,8 +10,6 @@ from pathlib import Path
 
 import duckdb
 
-from myfitty.config import load_config
-
 METRICS = ("ftp", "threshold_hr", "max_hr")
 
 SCHEMA = """
@@ -69,7 +67,10 @@ def connect(path: Path | None = None, retries: int = 50, delay: float = 0.1):
 
     Retries briefly when another process (e.g. a CLI import) holds the file lock.
     """
-    path = Path(path) if path is not None else load_config().db_path
+    if path is None:
+        from myfitty.config import load_config  # deferred: config imports METRICS from here
+        path = load_config().db_path
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(retries):
         try:

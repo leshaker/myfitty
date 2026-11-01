@@ -226,3 +226,16 @@ def test_cli_runs(tmp_path):
     assert out.returncode == 0 and "1 imported" in out.stdout
     out = subprocess.run([sys.executable, "-m", "myfitty.ingest"], env=env, capture_output=True, text=True)
     assert "1 unchanged" in out.stdout
+
+
+def test_myfitty_entrypoint(tmp_path):
+    import subprocess, sys
+    from myfitty import cli
+    assert cli.main([]) == 2 and cli.main(["bogus"]) == 2 and cli.main(["--help"]) == 0
+    fit = tmp_path / "fit"
+    fit.mkdir()
+    put(Config(fit, tmp_path / "d.duckdb", tmp_path / "s"), "a.fit", src="ride_power_hr.fit")
+    env = {**os.environ, "MYFITTY_FIT_DIR": str(fit), "MYFITTY_DB": str(tmp_path / "d.duckdb"),
+           "MYFITTY_SAMPLES_DIR": str(tmp_path / "s")}
+    out = subprocess.run([sys.executable, "-m", "myfitty.cli", "ingest"], env=env, capture_output=True, text=True)
+    assert out.returncode == 0 and "1 imported" in out.stdout

@@ -1,13 +1,19 @@
 import sys
 
 from myfitty import db
-from myfitty.config import load_config
+from myfitty.config import ConfigError, load_config
 from myfitty.ingest.importer import scan
+from myfitty.rescore import seed_thresholds
 
 
 def main() -> int:
-    cfg = load_config()
+    try:
+        cfg = load_config()
+    except ConfigError as e:
+        print(f"config error: {e}", file=sys.stderr)
+        return 2
     with db.connect(cfg.db_path) as con:
+        seed_thresholds(con, cfg.thresholds)
         result = scan(con, cfg)
     if result.folder_missing:
         print(f"FIT folder not found: {cfg.fit_dir}", file=sys.stderr)

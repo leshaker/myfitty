@@ -5,15 +5,19 @@ import pandas as pd
 import streamlit as st
 
 from myfitty import db, queries
-from myfitty.config import load_config
+from myfitty.config import ConfigError, load_config
 from myfitty.ingest.importer import scan
-from myfitty.rescore import remove_threshold, save_threshold
+from myfitty.rescore import remove_threshold, save_threshold, seed_thresholds
 
 CTL_COLOR, ATL_COLOR, TSB_COLOR = "#2a78d6", "#eb6834", "#1baf7a"  # categorical slots 1-3
 
 st.set_page_config(page_title="myfitty", layout="wide")
 alt.data_transformers.disable_max_rows()
-cfg = load_config()
+try:
+    cfg = load_config()
+except ConfigError as e:
+    st.error(f"Config error: {e}")
+    st.stop()
 
 
 # --- cached reads (cleared after any import or threshold change) -------------------------------
@@ -89,6 +93,11 @@ def thresholds_panel() -> None:
 
 if "scanned" not in st.session_state:
     st.session_state["scanned"] = True
+    try:
+        with db.connect(cfg.db_path) as con:
+            seed_thresholds(con, cfg.thresholds)
+    except ValueError as e:
+        st.error(f"Config thresholds rejected: {e}")
     run_import()
 
 DB = str(cfg.db_path)

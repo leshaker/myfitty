@@ -13,6 +13,10 @@ HR_TSS_ZONES = (
 # Edwards TRIMP: zone floor as a fraction of max HR -> weight. Below the first floor counts as zero.
 TRIMP_ZONES = ((0.5, 1), (0.6, 2), (0.7, 3), (0.8, 4), (0.9, 5))
 
+# Sports scored from heart rate only, even when the file has power data: running power is not
+# comparable with a cycling FTP, so power TSS would be wrong. FIT `session.sport` names.
+HR_ONLY_SPORTS = frozenset({"running"})
+
 NP_WINDOW_SECONDS = 30
 CTL_DAYS = 42
 ATL_DAYS = 7
