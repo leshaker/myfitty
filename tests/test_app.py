@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -148,3 +149,66 @@ def test_config_thresholds_loaded_at_start(env):
         assert db.list_thresholds(con)[0][2] == 250
         assert con.execute("SELECT tss FROM activities").fetchone()[0] == pytest.approx(100)
     assert at.dataframe[0].value["TSS"].iloc[0] == pytest.approx(100)
+
+
+def test_activity_table_shows_local_time_and_whole_numbers(env):
+    d = date.today() - timedelta(days=3)
+    utc = datetime(d.year, d.month, d.day, 14, 25, tzinfo=timezone.utc)
+    with db.connect(env / "t.duckdb") as con:
+        con.execute("INSERT INTO activities (start_time, local_date, device_serial, sport, moving_seconds, tss, "
+                    "tss_method, trimp) VALUES (?, ?, 's', 'cycling', 3600, 52.4889, 'power', 439.5833)",
+                    [utc.replace(tzinfo=None), utc.astimezone().date()])
+    at = run()
+    row = at.dataframe[0].value.iloc[0]
+    assert row["when"] == utc.astimezone().strftime("%Y-%m-%d %H:%M")      # local, not UTC
+    import json
+    cols = json.loads(at.dataframe[0].proto.columns)                       # whole-number display for the scores
+    assert cols["TSS"]["type_config"]["format"] == "%.0f"
+    assert cols["relative effort"]["type_config"]["format"] == "%.0f"
+
+
+def test_weekly_chart_has_one_band_per_week(env):
+    seed(env, [(40, "cycling", 100), (20, "cycling", 120), (5, "running", 40)])
+    at = run()
+    spec = charts(at)[2].proto.spec
+    assert '"field": "week"' in spec and '"type": "ordinal"' in spec
+    assert '"type": "temporal"' not in spec.split('"tooltip"')[0]            # x is no longer a time axis
+
+
+def pmc_metrics(at):
+    import pyarrow as pa
+    ds = charts(at)[0].proto.datasets[0].data.data
+    return set(pa.ipc.open_stream(ds).read_all().to_pandas()["metric"])
+
+
+def test_series_can_be_shown_and_hidden_independently(env):
+    seed(env, [(20, "cycling", 100), (5, "cycling", 120)])
+    at = run()
+    pills = at.get("button_group")[0]
+    assert pills.value == ["Fitness (CTL)", "Fatigue (ATL)"]                 # both visible by default
+    assert pmc_metrics(at) == {"Fitness (CTL)", "Fatigue (ATL)"}
+
+    pills.set_value(["Fitness (CTL)"]).run()                                  # hide ATL only
+    assert not at.exception and pmc_metrics(at) == {"Fitness (CTL)"}
+    at.get("button_group")[0].set_value(["Fitness (CTL)", "Fatigue (ATL)"]).run()   # show it again: both
+    assert pmc_metrics(at) == {"Fitness (CTL)", "Fatigue (ATL)"}
+    at.get("button_group")[0].set_value(["Fatigue (ATL)"]).run()              # the other one alone
+    assert pmc_metrics(at) == {"Fatigue (ATL)"}
+
+    at.get("button_group")[0].set_value([]).run()                             # none: no chart, a hint instead
+    assert not at.exception and len(charts(at)) == 2                          # form + weekly remain
+    assert any("at least one series" in c.value for c in at.caption)
+
+
+def rule_tooltip_titles(at):
+    spec = json.loads(charts(at)[0].proto.spec)
+    rule = next(l for l in spec["layer"] if (l["mark"] if isinstance(l["mark"], str) else l["mark"]["type"]) == "rule")
+    return [t["title"] for t in rule["encoding"]["tooltip"]]
+
+
+def test_tooltip_lists_every_visible_series_at_once(env):
+    seed(env, [(20, "cycling", 100), (5, "cycling", 120)])
+    at = run()
+    assert rule_tooltip_titles(at) == ["Date", "Fitness (CTL)", "Fatigue (ATL)", "Form (TSB)"]
+    at.get("button_group")[0].set_value(["Fatigue (ATL)"]).run()
+    assert rule_tooltip_titles(at) == ["Date", "Fatigue (ATL)", "Form (TSB)"]

@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, timedelta, timezone
 
 import altair as alt
 import pandas as pd
@@ -149,13 +149,28 @@ long["metric"] = long["metric"].map({"ctl": "Fitness (CTL)", "atl": "Fatigue (AT
 color = alt.Color("metric:N", title=None, sort=["Fitness (CTL)", "Fatigue (ATL)"],
                   scale=alt.Scale(domain=["Fitness (CTL)", "Fatigue (ATL)"], range=[CTL_COLOR, ATL_COLOR]),
                   legend=alt.Legend(orient="top", direction="horizontal"))
+# Show/hide series with multi-select pills; the chart legend only keys the colors. (Vega's own
+# legend binding selects one entry per click, so it can't toggle independently.)
+SERIES = ["Fitness (CTL)", "Fatigue (ATL)"]
+picked_series = st.pills("Show", SERIES, selection_mode="multi", default=SERIES, key="series_pills") or []
+visible = alt.Chart(long[long["metric"].isin(picked_series)])
 hover = alt.selection_point(fields=["date"], nearest=True, on="pointerover", empty=False, clear="pointerout")
-lines = alt.Chart(long).mark_line(strokeWidth=2).encode(x=x, y=alt.Y("value:Q", title="TSS / day (weighted)"), color=color)
-points = lines.mark_point(size=60, filled=True).encode(opacity=alt.condition(hover, alt.value(1), alt.value(0)))
-rule = alt.Chart(long).mark_rule(color="gray", opacity=0.4).encode(
-    x=x, tooltip=[alt.Tooltip("date:T"), alt.Tooltip("metric:N"), alt.Tooltip("value:Q", format=".1f")],
-    opacity=alt.condition(hover, alt.value(1), alt.value(0))).add_params(hover)
-st.altair_chart((lines + points + rule).properties(height=280), width="stretch")
+y = alt.Y("value:Q", title="TSS / day (weighted)")
+lines = visible.mark_line(strokeWidth=2).encode(x=x, y=y, color=color)
+points = visible.mark_point(size=60, filled=True).encode(
+    x=x, y=y, color=color, opacity=alt.condition(hover, alt.value(1), alt.value(0)))
+# The hover rule uses one row per date so a single tooltip can list every visible series; the
+# long-format layers above hold one row per (date, series) and would only show one of them.
+tooltip = [alt.Tooltip("date:T", title="Date")]
+tooltip += [alt.Tooltip(f"{col}:Q", title=name, format=".1f")
+            for col, name in (("ctl", "Fitness (CTL)"), ("atl", "Fatigue (ATL)")) if name in picked_series]
+tooltip.append(alt.Tooltip("tsb:Q", title="Form (TSB)", format=".1f"))
+rule = alt.Chart(pmc).mark_rule(color="gray", opacity=0.4).encode(
+    x=x, tooltip=tooltip, opacity=alt.condition(hover, alt.value(1), alt.value(0))).add_params(hover)
+if picked_series:
+    st.altair_chart((lines + points + rule).properties(height=280), width="stretch")
+else:
+    st.caption("Select at least one series above.")
 
 st.subheader("Form (TSB = CTL − ATL)")
 area = alt.Chart(pmc).mark_area(opacity=0.25, color=TSB_COLOR, line={"color": TSB_COLOR, "strokeWidth": 2}).encode(
@@ -164,18 +179,31 @@ zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(color="gray", strokeDash=[4
 st.altair_chart((area + zero).properties(height=160), width="stretch")
 
 st.subheader("Weekly load")
+# One band per week (ordinal axis) so bars have a sensible width; labels carry the year only for long ranges.
+long_range = len(weekly) > 40
+weekly = weekly.assign(week=pd.to_datetime(weekly["week_start"]).dt.strftime("%d %b %y" if long_range else "%d %b"))
 bars = alt.Chart(weekly).mark_bar(color=CTL_COLOR, cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
-    x=alt.X("week_start:T", title="Week starting (Monday)"), y=alt.Y("tss:Q", title="TSS"),
+    x=alt.X("week:O", sort=None, title="Week starting (Monday)", axis=alt.Axis(labelAngle=-45)),
+    y=alt.Y("tss:Q", title="TSS"),
     tooltip=[alt.Tooltip("week_start:T", title="Week of"), alt.Tooltip("tss:Q", title="TSS", format=".0f")])
 st.altair_chart(bars.properties(height=200), width="stretch")
 
 st.subheader("Activities")
 acts = load_activities(DB, sport, start, end)
+
+
+def local_time(utc_naive: pd.Timestamp) -> str:
+    """start_time is stored as naive UTC; show it in the machine's local time zone."""
+    return utc_naive.to_pydatetime().replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+
+
 table = acts.assign(
-    when=acts["start_time"].dt.strftime("%Y-%m-%d %H:%M"),
+    when=acts["start_time"].map(local_time),
     minutes=(acts["moving_seconds"] / 60).round(0),
     km=(acts["distance_m"] / 1000).round(1),
 )[["when", "sport", "sub_sport", "minutes", "km", "tss", "tss_method", "trimp", "unscored_reason"]]
+whole = st.column_config.NumberColumn(format="%.0f")
 st.dataframe(table.rename(columns={"tss": "TSS", "tss_method": "method", "trimp": "relative effort",
                                    "unscored_reason": "unscored"}),
+             column_config={"TSS": whole, "relative effort": whole},
              hide_index=True, width="stretch")
