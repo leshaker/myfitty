@@ -1,10 +1,12 @@
 from datetime import date, timedelta, timezone
 
+import html
+
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from myfitty import db, queries
+from myfitty import db, mapview, queries
 from myfitty.config import ConfigError, load_config
 from myfitty.ingest.importer import scan
 from myfitty.rescore import remove_threshold, save_threshold, seed_thresholds
@@ -45,6 +47,17 @@ def load_weekly(db_path: str, sport, start, end) -> pd.DataFrame:
 def load_weekly_effort(db_path: str, sport, start, end) -> pd.DataFrame:
     with db.connect(db_path) as con:
         return queries.weekly_effort(con, sport, start, end)
+
+
+@st.cache_data(show_spinner=False)
+def load_routes(db_path: str, sport, start, end) -> pd.DataFrame:
+    with db.connect(db_path) as con:
+        return queries.routes(con, sport, start, end)
+
+
+@st.cache_data(show_spinner=False)
+def load_density(db_path: str, sport, start, end) -> list:
+    return mapview.density_data(load_routes(db_path, sport, start, end)["stretch"].tolist())
 
 
 @st.cache_data(show_spinner=False)
@@ -142,6 +155,34 @@ if full.empty:
         f"No activities yet. Put FIT files in `{cfg.fit_dir}` "
         "(set `MYFITTY_FIT_DIR` to change it) and press **Import now**."
     )
+    st.stop()
+
+# --- heatmap ------------------------------------------------------------------------------------
+
+
+def show_heatmap() -> None:
+    """Routes or density of outdoor activities for the sidebar's sport and date range."""
+    left, right = st.columns([3, 1])
+    mode = left.radio("Layer", mapview.MODES, horizontal=True, key="heat_mode", label_visibility="collapsed")
+    basemap_on = right.toggle("Basemap", value=True, key="basemap")
+    routes = load_routes(DB, sport, start, end)
+    if routes.empty:
+        st.info("No routes found for this selection. Only outdoor activities with GPS are shown: indoor "
+                "and virtual activities are left off the map. Try a wider date range or another sport.")
+        return
+    theme = getattr(getattr(st.context, "theme", None), "type", None)
+    basemap = None if not basemap_on else ("dark" if theme == "dark" else "light")
+    if mode == "Routes" and sport is None:
+        st.markdown("  ".join(f'<span style="color:{colour}">●</span> {html.escape(name)}'
+                              for name, colour in mapview.legend(routes["sport"])), unsafe_allow_html=True)
+    density = load_density(DB, sport, start, end) if mode == "Density" else None
+    st.pydeck_chart(mapview.build_deck(routes, mode, basemap, density), height=600)
+    st.caption(f"{routes['activity_id'].nunique()} activities, {len(routes)} route stretches")
+
+
+if (st.segmented_control("View", ["Training", "Heatmap"], default="Training", key="view",
+                         label_visibility="collapsed") or "Training") == "Heatmap":
+    show_heatmap()
     st.stop()
 
 # --- charts -------------------------------------------------------------------------------------

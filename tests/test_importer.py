@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import shutil
 import time
@@ -353,3 +354,94 @@ def test_cli_retry_failed_flag(tmp_path):
     assert "0 imported" in out.stdout and "1 unchanged" in out.stdout
     out = subprocess.run([sys.executable, "-m", "myfitty.cli", "ingest", "--retry-failed"], env=env, capture_output=True, text=True)
     assert "1 imported" in out.stdout
+
+
+# --- routes for the heatmap ---
+def _route(con, file_stem_sport=None):
+    rows = con.execute("SELECT a.sport, a.sub_sport, t.segments, t.point_count FROM activities a "
+                       "JOIN activity_tracks t ON t.activity_id = a.id ORDER BY a.start_time").fetchall()
+    return [(s, sub, json.loads(seg), n) for s, sub, seg, n in rows]
+
+
+def test_outdoor_activity_gets_a_thinned_route_at_import(env):
+    cfg, con = env
+    put(cfg, "a.fit", src="ride_power_hr.fit")
+    scan(con, cfg)
+    ((sport, sub, segments, n),) = _route(con)
+    assert sport == "cycling" and n == sum(len(s) for s in segments) and n >= 2
+    assert n < 20                                                       # from ~1,170 one-second fixes
+    assert all(-180 <= lon <= 180 and -90 <= lat <= 90 for s in segments for lon, lat in s)
+
+
+def test_a_pause_in_the_fixture_gives_two_stretches(env):
+    cfg, con = env
+    put(cfg, "a.fit", src="ride_power_hr.fit")                         # 30 s pause at t = 300..330
+    scan(con, cfg)
+    ((_, _, segments, _),) = _route(con)
+    assert len(segments) == 2
+
+
+def test_indoor_activity_is_handled_with_zero_points_and_is_not_a_failure(env):
+    cfg, con = env
+    put(cfg, "i.fit", src="indoor_nosensor.fit")
+    r = scan(con, cfg)
+    assert r.imported == 1 and not r.failures
+    assert _route(con) == [("cycling", "indoor_cycling", [], 0)]
+
+
+def test_virtual_ride_never_gets_a_route(env):
+    cfg, con = env
+    put(cfg, "v.fit", src="virtual_ride.fit")
+    scan(con, cfg)
+    assert _route(con) == [("cycling", "virtual_activity", [], 0)]
+    # its game-world GPS is still in the samples: it only stays off the map
+    assert con.execute("SELECT count(*) FROM activities").fetchone()[0] == 1
+
+
+def test_importing_a_route_does_not_change_the_duplicate_handling(env):
+    cfg, con = env
+    put(cfg, "a.fit", src="ride_power_hr.fit")
+    put(cfg, "copy.fit", src="ride_power_hr.fit")
+    r = scan(con, cfg)
+    assert r.imported == 1 and r.duplicates == 1
+    assert con.execute("SELECT count(*) FROM activity_tracks").fetchone()[0] == 1
+
+
+# --- backfilling routes for activities imported before routes existed ---
+def _import_then_forget_routes(cfg, con, *names):
+    for n, src in names:
+        put(cfg, n, src=src)
+    scan(con, cfg)
+    con.execute("DELETE FROM activity_tracks")                          # a database from before this change
+
+
+def test_backfill_creates_routes_from_the_samples_without_reading_fit_files(env, monkeypatch):
+    cfg, con = env
+    _import_then_forget_routes(cfg, con, ("a.fit", "ride_power_hr.fit"), ("i.fit", "indoor_nosensor.fit"),
+                               ("v.fit", "virtual_ride.fit"))
+    monkeypatch.setattr(importer, "parse_fit", lambda p: pytest.fail("a FIT file was read"))
+    scan(con, cfg)                                                       # nothing new: only the backfill runs
+    counts = dict(con.execute("SELECT a.sub_sport, t.point_count FROM activities a "
+                              "JOIN activity_tracks t ON t.activity_id = a.id").fetchall())
+    assert counts["road"] >= 2 and counts["indoor_cycling"] == 0 and counts["virtual_activity"] == 0
+
+
+def test_backfill_is_not_repeated_for_handled_activities(env, monkeypatch):
+    cfg, con = env
+    _import_then_forget_routes(cfg, con, ("a.fit", "ride_power_hr.fit"), ("i.fit", "indoor_nosensor.fit"))
+    scan(con, cfg)                                                       # first run does the backfill
+    monkeypatch.setattr(importer, "_read_positions", lambda *a: pytest.fail("samples were read again"))
+    scan(con, cfg)                                                       # zero-point rows count as handled too
+    assert con.execute("SELECT count(*) FROM activity_tracks").fetchone()[0] == 2
+
+
+def test_backfill_skips_unreadable_samples_without_failing_the_scan(env):
+    cfg, con = env
+    _import_then_forget_routes(cfg, con, ("a.fit", "ride_power_hr.fit"), ("r.fit", "run_hr_only.fit"))
+    first = next(cfg.samples_dir.rglob("sport=cycling/**/*.parquet"))
+    first.unlink()
+    r = scan(con, cfg)
+    assert not r.failures
+    sports = [s for (s,) in con.execute("SELECT a.sport FROM activities a JOIN activity_tracks t "
+                                        "ON t.activity_id = a.id").fetchall()]
+    assert sports == ["running"]                                         # the ride with no samples file is skipped
