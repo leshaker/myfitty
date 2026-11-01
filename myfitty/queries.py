@@ -1,4 +1,5 @@
 """Read-side queries returning DataFrames for the UI. No Streamlit imports."""
+import json
 from datetime import date
 
 import pandas as pd
@@ -61,4 +62,30 @@ def weekly_effort(con, sport: str | None = None, start: date | None = None, end:
     daily = pd.Series({d: float(v) for d, v in rows}, dtype="float64")
     series = pmc_calc.window(pmc_calc.daily_pmc(daily, today), start, end)   # zero-filled to today
     return pmc_calc.weekly_load(series).rename(columns={"tss": "effort"})
+
+
+ROUTE_COLUMNS = ["activity_id", "sport", "local_date", "stretch"]
+
+
+def routes(con, sport: str | None = None, start: date | None = None, end: date | None = None) -> pd.DataFrame:
+    """One row per continuous route stretch (`stretch` = list of [lon, lat]) for the filtered activities.
+
+    Activities without a usable route (indoor, virtual, no fix) are left out.
+    """
+    q = ("SELECT a.id, a.sport, a.local_date, t.segments FROM activities a "
+         "JOIN activity_tracks t ON t.activity_id = a.id WHERE t.point_count > 0")
+    args = []
+    if sport:
+        q += " AND a.sport = ?"
+        args.append(sport)
+    if start:
+        q += " AND a.local_date >= ?"
+        args.append(start)
+    if end:
+        q += " AND a.local_date <= ?"
+        args.append(end)
+    rows = [(aid, sp, d, stretch)
+            for aid, sp, d, seg in con.execute(q + " ORDER BY a.start_time", args).fetchall()
+            for stretch in json.loads(seg)]
+    return pd.DataFrame(rows, columns=ROUTE_COLUMNS)
 

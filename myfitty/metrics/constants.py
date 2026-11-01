@@ -25,3 +25,12 @@ HR_ONLY_SPORTS = frozenset({"running"})
 NP_WINDOW_SECONDS = 30
 CTL_DAYS = 42
 ATL_DAYS = 7
+
+# Routes for the heatmap (see ingest/tracks.py and geo.py)
+TRACK_GAP_SECONDS = 30          # no GPS fix for longer than this splits a route
+TRACK_JUMP_METRES = 300         # a position jump larger than this splits a route
+TRACK_TOLERANCE_METRES = 10     # Douglas-Peucker: no original point further than this from the thinned route
+TRACK_DECIMALS = 5              # coordinates rounded to ~1 m
+DENSITY_SPACING_METRES = 100    # evenly spaced points along routes for the density view
+# Sub-sports whose GPS describes a game world, never a real place (Zwift-style virtual rides).
+NON_GEOGRAPHIC_SUB_SPORTS = frozenset({"virtual_activity"})

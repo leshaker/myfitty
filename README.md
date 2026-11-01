@@ -68,8 +68,32 @@ Environment variables override the file.
 - **Parquet**: each activity's samples resampled to 1 per second (`t`, `hr`, `power`, `speed`, `lat`, `lon`,
   `altitude`) under `samples/sport=<sport>/year=<yyyy>/`. Read them all with
   `read_parquet('data/samples/**/*.parquet', hive_partitioning=true)` in DuckDB.
+- **Routes** for the heatmap, one simplified route per outdoor activity, in the `activity_tracks` table
+  (an activity with no usable GPS gets a zero-point row, so it is not processed again).
 - Activities are deduplicated on start time + device serial number (or, without a serial, a hash of the
   file), so the same ride arriving from two folders or under another filename is imported once.
+
+## Heatmap
+
+Switch the page from **Training** to **Heatmap** (top of the main area) to see where your outdoor activities
+happened, for the sport and date range chosen in the sidebar:
+
+- **Routes** draws every route as a thin translucent line, so roads you ride often look stronger. With all
+  sports shown, routes are coloured by sport (a legend sits above the map).
+- **Density** is a smoothed heat layer, built from points spaced evenly every 100 m along the routes
+  (`DENSITY_SPACING_METRES`), so each activity weighs by distance, not by time.
+- The map zooms to the selected routes whenever the filters change. The date range defaults to the last
+  180 days; widen it in the sidebar to see more.
+- Indoor, treadmill and virtual activities (for example Zwift rides, whose GPS is in a game world) are left off
+  the map but still count in the training load. Virtual rides are recognised by sub-sport `virtual_activity`
+  (`NON_GEOGRAPHIC_SUB_SPORTS` in `myfitty/metrics/constants.py`).
+- **Basemap**: the toggle above the map hides the tiles. With the basemap on, the tile provider (CARTO) learns
+  which area you are looking at; with it off, no tile requests are made and everything stays on your machine.
+
+Routes are built when an activity is imported (and filled in on the next import for older activities): GPS
+dropouts are never joined (no fix for more than 30 s, or a jump over 300 m, starts a new stretch), and each
+stretch is thinned so no point is more than 10 m from the recorded path (`TRACK_*` constants). For a history
+of about 600 activities that keeps about 3% of the points, a few MB.
 
 ## Metric definitions
 

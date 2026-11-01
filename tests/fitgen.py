@@ -60,12 +60,13 @@ def semicircles(deg: float) -> int:
 
 
 SPORTS = {"generic": 0, "running": 1, "cycling": 2}
-SUB_SPORTS = {"generic": 0, "indoor_cycling": 6, "road": 7, "street": 2}
+SUB_SPORTS = {"generic": 0, "indoor_cycling": 6, "road": 7, "street": 2, "virtual_activity": 58}
 
 
 def make_fit(*, start: datetime, seconds: int, sport: str | None, sub_sport: str | None = None,
              serial: int | None = 1, power=None, hr=None, gps=False, file_type: int = 4,
-             session: bool = True, gap: tuple[int, int] | None = None, array_fields: bool = False) -> bytes:
+             session: bool = True, gap: tuple[int, int] | None = None, array_fields: bool = False,
+             origin: tuple[float, float] = (47.0, 8.0)) -> bytes:
     """Build an activity FIT file with one record per second.
 
     power / hr: callables t -> value (or None for absent).  gap: (from_t, to_t) of seconds
@@ -87,8 +88,8 @@ def make_fit(*, start: datetime, seconds: int, sport: str | None, sub_sport: str
         ts = fit_ts(start) + t
         f = [(253, UINT32, ts)]
         if gps:
-            f += [(0, SINT32, semicircles(47.0 + 0.0001 * t)),
-                  (1, SINT32, semicircles(8.0 + 0.0001 * math.sin(t / 60)))]
+            f += [(0, SINT32, semicircles(origin[0] + 0.0001 * t)),
+                  (1, SINT32, semicircles(origin[1] + 0.0001 * math.sin(t / 60)))]
         dist += 5.0
         f.append((5, UINT32, int(dist * 100)))
         if array_fields:  # high-rate recording: three samples per record, as some Garmin devices write
@@ -142,6 +143,13 @@ def array_fields_ride() -> bytes:
                     sub_sport="road", serial=666, hr=lambda t: 130, array_fields=True)
 
 
+def virtual_ride() -> bytes:
+    """A Zwift-style ride: GPS in a game world in the South Pacific."""
+    return make_fit(start=datetime(2026, 3, 15, 18, 0, 0, tzinfo=timezone.utc), seconds=300, sport="cycling",
+                    sub_sport="virtual_activity", serial=777, gps=True, power=lambda t: 200, hr=lambda t: 140,
+                    origin=(-21.7, 167.0))
+
+
 def no_sport() -> bytes:
     return make_fit(start=datetime(2026, 3, 13, 8, 0, 0, tzinfo=timezone.utc), seconds=120, sport=None,
                     serial=444, hr=lambda t: 100)
@@ -160,6 +168,7 @@ FIXTURES = {
     "run_hr_only.fit": run_hr_only,
     "indoor_nosensor.fit": indoor_nosensor,
     "no_sport.fit": no_sport,
+    "virtual_ride.fit": virtual_ride,
     "array_fields.fit": array_fields_ride,
     "non_activity.fit": non_activity,
     "corrupt.fit": corrupt,

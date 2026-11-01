@@ -60,6 +60,11 @@ CREATE TABLE IF NOT EXISTS ingest_failures (
     reason VARCHAR NOT NULL,
     failed_at TIMESTAMP DEFAULT current_timestamp
 );
+CREATE TABLE IF NOT EXISTS activity_tracks (
+    activity_id BIGINT PRIMARY KEY,
+    segments VARCHAR NOT NULL,              -- JSON [[[lon, lat], ...], ...]: simplified route, one list per stretch
+    point_count INTEGER NOT NULL            -- 0 = handled, but no usable GPS (indoor, virtual, no fix)
+);
 CREATE TABLE IF NOT EXISTS source_files (
     path VARCHAR PRIMARY KEY,
     size BIGINT NOT NULL,

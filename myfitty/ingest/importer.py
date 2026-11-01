@@ -13,6 +13,7 @@ from myfitty import db
 from myfitty.config import Config, load_config
 from myfitty.ingest.parser import NotAnActivity, parse_fit
 from myfitty.ingest.samples import sample_relpath, write_samples
+from myfitty.ingest.tracks import route_row
 from myfitty.metrics.scoring import score_activity
 
 MIN_AGE_SECONDS = 2.0  # newer files may still be being written
@@ -59,10 +60,30 @@ def _backfill_max_power(con, samples_dir) -> None:
             con.execute("UPDATE activities SET max_power = ? WHERE id = ?", [float(mx), aid])
 
 
+def _read_positions(samples_dir, rel):
+    """(t, lat, lon) columns of an activity's samples file."""
+    df = pd.read_parquet(samples_dir / rel, columns=["t", "lat", "lon"])
+    return df["t"], df["lat"], df["lon"]
+
+
+def _backfill_routes(con, samples_dir) -> None:
+    """Create routes for activities that have samples but no route row, from the samples alone."""
+    rows = con.execute("SELECT a.id, a.sub_sport, a.sample_path FROM activities a "
+                       "LEFT JOIN activity_tracks t ON t.activity_id = a.id "
+                       "WHERE t.activity_id IS NULL AND a.sample_path IS NOT NULL").fetchall()
+    for aid, sub_sport, rel in rows:
+        try:
+            t, lat, lon = _read_positions(samples_dir, rel)
+        except (OSError, ValueError, KeyError):
+            continue  # samples missing or unreadable: skip, no row, so it is retried next scan
+        _store_route(con, aid, sub_sport, t, lat, lon)
+
+
 def _scan(con, cfg: Config, now: float | None, retry_failed: bool = False) -> ScanResult:
     now = time.time() if now is None else now
     result = ScanResult()
     _backfill_max_power(con, cfg.samples_dir)
+    _backfill_routes(con, cfg.samples_dir)
     if not cfg.fit_dir.is_dir():
         result.folder_missing = True
         return result
@@ -114,17 +135,25 @@ def _import_file(con, cfg: Config, path: Path) -> str:
     write_samples(cfg.samples_dir, rel, act.samples)  # before the row, so a row never lacks samples
 
     try:
-        con.execute(
+        activity_id = con.execute(
             """INSERT INTO activities (start_time, local_date, device_serial, sport, sub_sport, source_path,
                    sample_path, elapsed_seconds, moving_seconds, distance_m, avg_hr, max_hr, avg_power,
                    max_power, normalized_power, hr_histogram, tss, tss_method, relative_effort, ftp_used, thr_hr_used,
                    max_hr_used, unscored_reason)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               RETURNING id""",
             [start_utc, local_date, serial, act.sport, act.sub_sport, str(path), rel, act.elapsed_seconds,
              act.moving_seconds, act.distance_m, act.avg_hr, act.max_hr, act.avg_power, act.max_power, act.normalized_power,
              json.dumps(act.hr_histogram) if act.hr_histogram else None,
              score["tss"], score["tss_method"], score["relative_effort"], score["ftp_used"], score["thr_hr_used"],
-             score["max_hr_used"], score["unscored_reason"]])
+             score["max_hr_used"], score["unscored_reason"]]).fetchone()[0]
     except duckdb.ConstraintException:  # lost a race with another importer: it is a duplicate
         return "duplicate"
+    _store_route(con, activity_id, act.sub_sport, act.samples["t"], act.samples["lat"], act.samples["lon"])
     return "imported"
+
+
+def _store_route(con, activity_id: int, sub_sport, t, lat, lon) -> None:
+    """Store the simplified route; a zero-point row marks activities with no usable GPS as handled."""
+    segments, points = route_row(sub_sport, t, lat, lon)
+    con.execute("INSERT OR IGNORE INTO activity_tracks VALUES (?, ?, ?)", [activity_id, segments, points])

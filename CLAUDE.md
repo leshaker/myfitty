@@ -24,12 +24,18 @@ design, tasks). When code changes behavior, update the matching spec scenario, `
 in the same change, and keep `openspec validate --strict` clean. Tasks are checkboxes in `tasks.md`.
 Changes are archived after merge (`/opsx:archive`), which syncs their deltas into `openspec/specs/`; a new change
 can only MODIFY requirements that already exist there, so archive the previous change first. Archived so far:
-`add-fit-ingest-and-pmc`, `add-relative-effort`; no change is active.
+`add-fit-ingest-and-pmc`, `add-relative-effort`, `add-route-heatmap`; no change is active.
 
 ## Architecture rules
 
 - `myfitty/metrics/` is pure (no I/O, no Streamlit). `ingest/`, `queries.py`, `rescore.py` and `db.py` must not
   import Streamlit; only `app.py` does.
+- Map code: `ingest/tracks.py` (pure: gap splitting, 10 m Douglas-Peucker) builds routes into the
+  `activity_tracks` table at import, and `_backfill_routes` fills in older activities from their Parquet samples;
+  `geo.py` (pure) spaces density points and fits the viewport; `mapview.py` builds the pydeck map (imports pydeck,
+  never Streamlit). Virtual rides (`NON_GEOGRAPHIC_SUB_SPORTS`) never get a route. pydeck gotchas: it pretty-prints
+  JSON, so `mapview.CompactDeck` serializes compactly (else the payload triples), and plain strings become JS
+  expressions, so literal strings use `pydeck.types.String`.
 - DuckDB allows one read-write process. `db.connect()` opens a short-lived connection per operation (retrying
   on the file lock); never hold one open. Writers (`scan`, threshold save/remove/seed, `rescore`) take
   `db.WRITE_LOCK`, because Streamlit runs each browser session in its own thread.
@@ -51,6 +57,9 @@ can only MODIFY requirements that already exist there, so archive the previous c
 - Streamlit `AppTest`: charts are `vega_lite_chart` elements (data is an Arrow stream in `proto.datasets`); the
   series toggle is a `button_group`; give buttons a `key=` and look them up by key, because form submit buttons
   also appear in `at.button`.
+- The page's Training / Heatmap switch is also a `button_group` (key `view`), so look the series pills up by key
+  (`series_pills`), not by index. The map is a `deck_gl_json_chart` element: `json.loads(el.proto.json)` gives its
+  layers, data, view state and `mapStyle` (absent when the basemap is off).
 - Concurrency tests run real threads; keep them passing repeatedly, not just once.
 
 ## Public repo: keep personal data out
