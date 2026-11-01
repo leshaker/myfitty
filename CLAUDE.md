@@ -24,7 +24,7 @@ design, tasks). When code changes behavior, update the matching spec scenario, `
 in the same change, and keep `openspec validate --strict` clean. Tasks are checkboxes in `tasks.md`.
 Changes are archived after merge (`/opsx:archive`), which syncs their deltas into `openspec/specs/`; a new change
 can only MODIFY requirements that already exist there, so archive the previous change first. Archived so far:
-`add-fit-ingest-and-pmc`. Active: `add-relative-effort` (implemented; archive after its PR is merged).
+`add-fit-ingest-and-pmc`, `add-relative-effort`; no change is active.
 
 ## Architecture rules
 
