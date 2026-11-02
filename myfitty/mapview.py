@@ -16,6 +16,8 @@ ROUTE_ALPHA = 70           # of 255: thin, translucent lines so overlapping rout
 # An empty map style, as a data: URL because Streamlit's frontend calls string methods on mapStyle.
 BLANK_STYLE = "data:application/json," + json.dumps({"version": 8, "sources": {}, "layers": []},
                                                     separators=(",", ":"))
+DENSITY_COLOR = [240, 70, 20, 40]    # translucent, so points stack up into hotter spots
+DENSITY_RADIUS_METRES = 40
 MODES = ("Routes", "Density")
 
 
@@ -49,7 +51,7 @@ def legend(sports) -> list[tuple[str, str]]:
 
 def density_data(stretches) -> list[list[float]]:
     """Evenly spaced [lon, lat] points (5 decimals) for the density layer."""
-    return np.round(geo.density_points(stretches, DENSITY_SPACING_METRES), 5).tolist()
+    return [{"p": p} for p in np.round(geo.density_points(stretches, DENSITY_SPACING_METRES), 5).tolist()]
 
 
 def build_deck(routes, mode: str, basemap: str | None, density=None, width: int = 1100,
@@ -62,7 +64,8 @@ def build_deck(routes, mode: str, basemap: str | None, density=None, width: int 
     stretches = routes["stretch"].tolist()
     if mode == "Density":
         layer = pdk.Layer("HeatmapLayer", data=density if density is not None else density_data(stretches),
-                          get_position="d", aggregation=String("SUM"), radius_pixels=25, intensity=1, threshold=0.05)
+                          get_position="p", aggregation=String("SUM"), get_weight=1, radius_pixels=25,
+                          intensity=1, threshold=0.05)
     else:
         data = [{"path": s, "color": [*sport_color(sp), ROUTE_ALPHA]}
                 for s, sp in zip(stretches, routes["sport"])]
