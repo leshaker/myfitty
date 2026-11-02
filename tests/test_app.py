@@ -409,7 +409,8 @@ def test_basemap_can_be_switched_off(env):
     assert "cartocdn" in deck(at)["mapStyle"]                               # on by default: a tile style
     at.toggle(key="basemap").set_value(False).run()
     style = deck(at)["mapStyle"]                                            # Streamlit would pick a themed tile
-    assert not at.exception and style["layers"] == [] and style["sources"] == {}   # basemap itself: send an empty style
+    assert not at.exception and isinstance(style, str)                      # basemap itself; the frontend needs a string
+    assert json.loads(style.removeprefix("data:application/json,")) == {"version": 8, "sources": {}, "layers": []}
     assert route_paths(at) == [FREIBURG]                                    # the routes are still drawn
     at.toggle(key="basemap").set_value(True).run()
     assert "cartocdn" in deck(at)["mapStyle"]

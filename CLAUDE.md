@@ -59,7 +59,7 @@ can only MODIFY requirements that already exist there, so archive the previous c
   also appear in `at.button`.
 - The page's Training / Heatmap switch is also a `button_group` (key `view`), so look the series pills up by key
   (`series_pills`), not by index. The map is a `deck_gl_json_chart` element: `json.loads(el.proto.json)` gives its
-  layers, data, view state and `mapStyle` (an empty style object when the basemap is off; with none, Streamlit picks a tile basemap itself).
+  layers, data, view state and `mapStyle` (an empty style as a `data:` URL when the basemap is off; with none, Streamlit picks a tile basemap itself).
 - Concurrency tests run real threads; keep them passing repeatedly, not just once.
 
 ## Public repo: keep personal data out

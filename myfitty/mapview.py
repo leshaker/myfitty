@@ -13,7 +13,9 @@ SPORT_COLORS = {"cycling": (42, 120, 214), "running": (235, 104, 52), "hiking": 
                 "walking": (232, 123, 164)}
 OTHER_COLOR = (130, 130, 130)
 ROUTE_ALPHA = 70           # of 255: thin, translucent lines so overlapping routes add up
-BLANK_STYLE = {"version": 8, "sources": {}, "layers": []}   # no tiles, so no tile requests
+# An empty map style, as a data: URL because Streamlit's frontend calls string methods on mapStyle.
+BLANK_STYLE = "data:application/json," + json.dumps({"version": 8, "sources": {}, "layers": []},
+                                                    separators=(",", ":"))
 MODES = ("Routes", "Density")
 
 
@@ -22,7 +24,7 @@ class CompactDeck(pdk.Deck):
     (7.8 MB instead of about 3 MB for 130,000 points). Streamlit sends whatever `to_json` returns.
 
     With `blank`, the style is an empty map style: without a mapStyle Streamlit falls back to its
-    themed tile basemap, and pydeck refuses a style object, so it is put in the JSON here.
+    themed tile basemap, and pydeck refuses a custom style, so it is put in the JSON here.
     """
 
     def __init__(self, *args, blank: bool = False, **kwargs):
