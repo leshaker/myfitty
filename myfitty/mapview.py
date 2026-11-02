@@ -13,15 +13,27 @@ SPORT_COLORS = {"cycling": (42, 120, 214), "running": (235, 104, 52), "hiking": 
                 "walking": (232, 123, 164)}
 OTHER_COLOR = (130, 130, 130)
 ROUTE_ALPHA = 70           # of 255: thin, translucent lines so overlapping routes add up
+BLANK_STYLE = {"version": 8, "sources": {}, "layers": []}   # no tiles, so no tile requests
 MODES = ("Routes", "Density")
 
 
 class CompactDeck(pdk.Deck):
     """pydeck pretty-prints its JSON (indent=2), which more than doubles the size of point data
-    (7.8 MB instead of about 3 MB for 130,000 points). Streamlit sends whatever `to_json` returns."""
+    (7.8 MB instead of about 3 MB for 130,000 points). Streamlit sends whatever `to_json` returns.
+
+    With `blank`, the style is an empty map style: without a mapStyle Streamlit falls back to its
+    themed tile basemap, and pydeck refuses a style object, so it is put in the JSON here.
+    """
+
+    def __init__(self, *args, blank: bool = False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.blank = blank
 
     def to_json(self):
-        return json.dumps(json.loads(super().to_json()), separators=(",", ":"))
+        spec = json.loads(super().to_json())
+        if self.blank:
+            spec["mapStyle"] = BLANK_STYLE
+        return json.dumps(spec, separators=(",", ":"))
 
 
 def sport_color(sport: str) -> tuple[int, int, int]:
@@ -48,7 +60,7 @@ def build_deck(routes, mode: str, basemap: str | None, density=None, width: int 
     stretches = routes["stretch"].tolist()
     if mode == "Density":
         layer = pdk.Layer("HeatmapLayer", data=density if density is not None else density_data(stretches),
-                          get_position="@@=d", aggregation=String("SUM"), radius_pixels=25, intensity=1, threshold=0.05)
+                          get_position="d", aggregation=String("SUM"), radius_pixels=25, intensity=1, threshold=0.05)
     else:
         data = [{"path": s, "color": [*sport_color(sp), ROUTE_ALPHA]}
                 for s, sp in zip(stretches, routes["sport"])]
@@ -56,4 +68,4 @@ def build_deck(routes, mode: str, basemap: str | None, density=None, width: int 
                           width_min_pixels=1.5, pickable=False)
     lon, lat, zoom = geo.fit_view(geo.bounding_box(stretches), width, height)
     return CompactDeck(layers=[layer], initial_view_state=pdk.ViewState(longitude=lon, latitude=lat, zoom=zoom),
-                    map_style=basemap)
+                    map_style=basemap, blank=basemap is None)
