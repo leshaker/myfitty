@@ -35,7 +35,7 @@ can only MODIFY requirements that already exist there, so archive the previous c
   `geo.py` (pure) spaces density points and fits the viewport; `mapview.py` builds the pydeck map (imports pydeck,
   never Streamlit). Virtual rides (`NON_GEOGRAPHIC_SUB_SPORTS`) never get a route. pydeck gotchas: it pretty-prints
   JSON, so `mapview.CompactDeck` serializes compactly (else the payload triples), and plain strings become JS
-  expressions, so literal strings use `pydeck.types.String`.
+  expressions (pydeck adds the `@@=` itself: pass `get_position="p"`, not `"@@=p"`); layer data must be row objects such as `{"p": [lon, lat]}`, because Streamlit draws nothing for bare `[lon, lat]` arrays, so literal strings use `pydeck.types.String`.
 - DuckDB allows one read-write process. `db.connect()` opens a short-lived connection per operation (retrying
   on the file lock); never hold one open. Writers (`scan`, threshold save/remove/seed, `rescore`) take
   `db.WRITE_LOCK`, because Streamlit runs each browser session in its own thread.
@@ -59,7 +59,7 @@ can only MODIFY requirements that already exist there, so archive the previous c
   also appear in `at.button`.
 - The page's Training / Heatmap switch is also a `button_group` (key `view`), so look the series pills up by key
   (`series_pills`), not by index. The map is a `deck_gl_json_chart` element: `json.loads(el.proto.json)` gives its
-  layers, data, view state and `mapStyle` (absent when the basemap is off).
+  layers, data, view state and `mapStyle` (an empty style as a `data:` URL when the basemap is off; with none, Streamlit picks a tile basemap itself).
 - Concurrency tests run real threads; keep them passing repeatedly, not just once.
 
 ## Public repo: keep personal data out

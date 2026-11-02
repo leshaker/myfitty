@@ -351,8 +351,9 @@ def test_density_view_uses_evenly_spaced_points_and_switching_keeps_the_selectio
     assert not at.exception
     lay = layer(at)
     assert lay["@@type"] == "HeatmapLayer" and lay["aggregation"] == "SUM"
+    assert lay["getPosition"] == "@@=p"                                     # one prefix: "@@=@@=p" fails in the browser
     assert len(lay["data"]) == len(geo.density_points([BERLIN], 100))        # only the selected sport, spaced by distance
-    assert all(abs(lon - 13.4) < 0.1 and abs(lat - 52.5) < 0.1 for lon, lat in lay["data"])
+    assert all(abs(lon - 13.4) < 0.1 and abs(lat - 52.5) < 0.1 for lon, lat in (d["p"] for d in lay["data"]))
     assert at.selectbox[0].value == "running"                                  # filters kept
     view = deck(at)["initialViewState"]
     assert (view["longitude"], view["latitude"], view["zoom"]) == (
@@ -407,7 +408,9 @@ def test_basemap_can_be_switched_off(env):
     at = open_heatmap(run())
     assert "cartocdn" in deck(at)["mapStyle"]                               # on by default: a tile style
     at.toggle(key="basemap").set_value(False).run()
-    assert not at.exception and "mapStyle" not in deck(at)                  # no tile layer, so no tile requests
+    style = deck(at)["mapStyle"]                                            # Streamlit would pick a themed tile
+    assert not at.exception and isinstance(style, str)                      # basemap itself; the frontend needs a string
+    assert json.loads(style.removeprefix("data:application/json,")) == {"version": 8, "sources": {}, "layers": []}
     assert route_paths(at) == [FREIBURG]                                    # the routes are still drawn
     at.toggle(key="basemap").set_value(True).run()
     assert "cartocdn" in deck(at)["mapStyle"]
